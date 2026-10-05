@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="המפקד">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<title>המפקד</title>
+<style>
+  :root { --bg:#0f1115; --fg:#f2f2f2; --muted:#8a8f98; --accent:#3ddc84; --bad:#ff5c5c; --warn:#ffb347;
+          --card:#1a1d24; --cell:#2a2e37; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-family:-apple-system,system-ui,sans-serif; }
+  main { max-width:520px; margin:0 auto; padding:16px; padding-top:max(16px, env(safe-area-inset-top));
+         display:flex; flex-direction:column; gap:12px; }
+  h1 { margin:0; font-size:22px; }
+  .stage { position:relative; width:100%; aspect-ratio:3/4; background:#000; border-radius:16px; overflow:hidden; }
+  video, canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
+  .count { position:absolute; top:4px; inset-inline:0; text-align:center; font-size:96px; font-weight:800;
+           text-shadow:0 2px 12px #000; pointer-events:none; }
+  .order { position:absolute; top:112px; inset-inline:12px; text-align:center; font-size:22px; font-weight:800;
+           color:var(--warn); text-shadow:0 2px 8px #000; pointer-events:none; }
+  .hint { position:absolute; bottom:10px; inset-inline:8px; text-align:center; font-size:18px; font-weight:600;
+          text-shadow:0 1px 6px #000; pointer-events:none; }
+  .hint.bad { color:var(--bad); }
+  .card { background:var(--card); border-radius:14px; padding:14px; }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .big { font-size:32px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .muted { color:var(--muted); font-size:14px; }
+  .ok { color:var(--accent); } .bad { color:var(--bad); }
+  .bar { height:12px; background:var(--cell); border-radius:6px; overflow:hidden; margin-top:10px; }
+  .bar > div { height:100%; width:0; background:var(--accent); transition:width .3s; }
+  button { width:100%; padding:16px; font-size:19px; font-weight:700; border:0; border-radius:14px;
+           background:var(--accent); color:#000; font-family:inherit; }
+  button.alt { background:var(--warn); }
+  button.stop { background:var(--bad); color:#fff; }
+  button:disabled { opacity:.5; }
+  .btns { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .levels { display:flex; gap:6px; margin-top:8px; }
+  .levels button { padding:10px 4px; font-size:15px; background:var(--cell); color:var(--fg); }
+  .levels button.on { background:var(--warn); color:#000; }
+  input[type=number] { width:90px; padding:8px; font-size:18px; border-radius:10px; border:1px solid #333;
+                       background:var(--cell); color:var(--fg); text-align:center; }
+  .cal { display:grid; grid-template-columns:repeat(7, 1fr); gap:5px; margin-top:10px; }
+  .cal div { aspect-ratio:1; border-radius:6px; background:var(--cell); font-size:11px; display:flex;
+             align-items:center; justify-content:center; color:#000a; }
+  .cal .full { background:var(--accent); } .cal .part { background:var(--warn); }
+  .cal .today { outline:2px solid var(--fg); }
+  .cal .head { background:none; color:var(--muted); aspect-ratio:auto; }
+  .stats { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; text-align:center; margin-top:10px; }
+  .stats b { display:block; font-size:22px; }
+  ul { margin:6px 0 0; padding-inline-start:20px; }
+  li { margin:4px 0; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <div class="row">
+    <h1>🪖 המפקד</h1>
+    <div id="streak" class="muted"></div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <div class="muted">היום</div>
+        <div class="big"><span id="today">0</span> / <span id="goalShow">100</span></div>
+      </div>
+      <div id="todayIcon" class="big">⏳</div>
+    </div>
+    <div class="bar"><div id="barFill"></div></div>
+  </div>
+
+  <div class="stage">
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="canvas"></canvas>
+    <div class="count" id="count"></div>
+    <div class="order" id="order"></div>
+    <div class="hint" id="hint">בחר אימון</div>
+  </div>
+
+  <div id="startBox">
+    <div class="btns">
+      <button id="freeBtn">💪 אימון חופשי</button>
+      <button id="drillBtn" class="alt">🪖 המפקד נותן פקודות</button>
+    </div>
+    <div class="levels" id="levels">
+      <button data-l="1">טירון</button>
+      <button data-l="2">לוחם</button>
+      <button data-l="3">קומנדו</button>
+    </div>
+  </div>
+  <button id="stopBtn" class="stop" hidden>⏹ סיום אימון</button>
+
+  <div class="card" id="summary" hidden></div>
+
+  <div class="card">
+    <div class="row"><b>החודש האחרון</b><span class="muted">🟩 עמדת ביעד · 🟧 חלקי</span></div>
+    <div class="cal" id="cal"></div>
+    <div class="stats">
+      <div><b id="stTotal">0</b><span class="muted">סה"כ שכיבות</span></div>
+      <div><b id="stBest">0</b><span class="muted">שיא בסט אחד</span></div>
+      <div><b id="stClean">-</b><span class="muted">טכניקה נקייה</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <b>יעד יומי</b>
+      <input type="number" id="goalInput" min="5" max="1000" step="5">
+    </div>
+  </div>
+
+  <div class="card">
+    <b>איך מעמידים את הטלפון</b>
+    <ul class="muted">
+      <li>הטלפון על הרצפה, <b>מהצד</b> שלך, בעמידה (נשען על משהו), 2 מטר ממך.</li>
+      <li>צריך לראות את כל הגוף: ראש, ידיים, אגן ורגליים.</li>
+      <li>תגביר את הווליום ותוריד את המצב השקט – המפקד מדבר.</li>
+    </ul>
+  </div>
+</main>
+
+<script type="module">
+import { PoseLandmarker, FilesetResolver, DrawingUtils }
+  from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const $ = id => document.getElementById(id);
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+
+// ================= storage (everything stays on the phone) =================
+const KEY = "commander_v1";
+let data = { goal: 100, level: 1, best: 0, days: {} };
+try { Object.assign(data, JSON.parse(localStorage.getItem(KEY)) || {}); } catch {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch {} };
+
+const dayKey = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function todayRec() {
+  const k = dayKey();
+  data.days[k] ??= { reps: 0, clean: 0, goal: data.goal };
+  data.days[k].goal = data.goal;
+  return data.days[k];
+}
+
+function streak() {
+  let n = 0;
+  const d = new Date();
+  const done = k => data.days[k] && data.days[k].reps >= data.days[k].goal;
+  if (!done(dayKey(d))) d.setDate(d.getDate() - 1);   // today still in progress
+  while (done(dayKey(d))) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+
+function renderStats() {
+  const t = todayRec();
+  $("today").textContent = t.reps;
+  $("goalShow").textContent = data.goal;
+  $("barFill").style.width = Math.min(100, t.reps / data.goal * 100) + "%";
+  $("todayIcon").textContent = t.reps >= data.goal ? "✅" : "⏳";
+  const s = streak();
+  $("streak").textContent = s ? `🔥 ${s} ימים ברצף` : "";
+
+  let total = 0, clean = 0;
+  for (const r of Object.values(data.days)) { total += r.reps; clean += r.clean; }
+  $("stTotal").textContent = total;
+  $("stBest").textContent = data.best;
+  $("stClean").textContent = total ? Math.round(clean / total * 100) + "%" : "-";
+
+  const cal = $("cal");
+  cal.innerHTML = "";
+  for (const h of ["א", "ב", "ג", "ד", "ה", "ו", "ש"]) {
+    const e = document.createElement("div"); e.className = "head"; e.textContent = h; cal.append(e);
+  }
+  const start = new Date(); start.setDate(start.getDate() - 34 - start.getDay());
+  const todayK = dayKey();
+  for (let d = new Date(start); dayKey(d) <= todayK; d.setDate(d.getDate() + 1)) {
+    const k = dayKey(d), r = data.days[k], e = document.createElement("div");
+    e.textContent = d.getDate();
+    if (r && r.reps >= r.goal) e.className = "full";
+    else if (r && r.reps > 0) e.className = "part";
+    if (k === todayK) e.classList.add("today");
+    if (r) e.title = `${r.reps}/${r.goal}`;
+    cal.append(e);
+  }
+}
+
+$("goalInput").value = data.goal;
+$("goalInput").addEventListener("change", e => {
+  const v = Math.round(+e.target.value);
+  if (v >= 5 && v <= 1000) { data.goal = v; save(); renderStats(); }
+  else e.target.value = data.goal;
+});
+
+function renderLevels() {
+  for (const b of $("levels").children) b.classList.toggle("on", +b.dataset.l === data.level);
+}
+$("levels").addEventListener("click", e => {
+  const l = +e.target.dataset?.l;
+  if (l) { data.level = l; save(); renderLevels(); }
+});
+
+renderStats();
+renderLevels();
+setInterval(renderStats, 60_000);   // rolls over at midnight
+
+// ================= voice of the commander =================
+let heVoice = null;
+function loadVoice() {
+  const vs = speechSynthesis.getVoices();
+  heVoice = vs.find(v => v.lang?.startsWith("he")) || null;
+}
+try { loadVoice(); speechSynthesis.onvoiceschanged = loadVoice; } catch {}
+
+let lastSpoke = 0;
+function say(text, { interrupt = true } = {}) {
+  lastSpoke = performance.now();
+  try {
+    if (interrupt) speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "he-IL";
+    if (heVoice) u.voice = heVoice;
+    u.rate = 1.15;
+    u.pitch = 0.7;
+    speechSynthesis.speak(u);
+  } catch {}
+}
+
+const LINES = {
+  start: ["קום, חייל! תיכנס לתנוחה!", "לתנוחת שכיבה! עכשיו!", "יאללה חייל, לרצפה!"],
+  sag: ["האגן נופל! תכווץ בטן!", "גב שוקע! תחזיק את הגוף ישר!", "בטן פנימה! אתה לא ערסל!"],
+  pike: ["תוריד את התחת! גוף ישר כמו קרש!", "אגן למטה! זה לא יוגה!", "התחת באוויר! ישר!"],
+  shallow: ["זה לא נספר! תרד עד הסוף!", "חצי שכיבה זה אפס שכיבה! למטה!", "יותר נמוך! החזה לרצפה!"],
+  lockout: ["תיישר ידיים עד הסוף!", "למעלה עד הסוף, חייל!"],
+  fast: ["לאט! זה לא תחרות!", "תשלוט בתנועה! לאט!"],
+  idle: ["מה, נרדמת?! קדימה!", "אני לא שומע ספירה!", "תזוז, חייל!", "זה הכל?! עוד!"],
+  praise: ["יפה!", "ככה אני אוהב!", "מצוין, חייל!", "טכניקה נקייה!", "תמשיך ככה!"],
+  notSeen: ["אני לא רואה אותך! תיכנס לפריים!"],
+  notPlank: ["תיכנס לתנוחת שכיבה!"],
+};
+
+// one correction at a time, and not the same one over and over
+const cooldowns = {};
+function correct(kind) {
+  const now = performance.now();
+  if (now - lastSpoke < 1800 || now - (cooldowns[kind] || 0) < 4000) return;
+  cooldowns[kind] = now;
+  say(pick(LINES[kind]));
+}
+
+// ================= pose analysis =================
+const UP = 0.75, DOWN = 0.45;
+const video = $("video"), canvas = $("canvas"), ctx = canvas.getContext("2d");
+let landmarker, draw, lastTime = -1, armLen = 0;
+
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const clamp01 = v => Math.max(0, Math.min(1, v));
+function angle(a, b, c) {
+  const ab = Math.atan2(a.y - b.y, a.x - b.x), cb = Math.atan2(c.y - b.y, c.x - b.x);
+  let deg = Math.abs((ab - cb) * 180 / Math.PI);
+  return deg > 180 ? 360 - deg : deg;
+}
+
+// Reads one frame. Returns { seen, plank, score (1 = arms straight, 0 = chest down), form: null|"sag"|"pike" }
+function readPose(lm) {
+  const W = video.videoWidth, H = video.videoHeight;
+  const hasVis = lm.some(p => (p.visibility ?? 0) > 0.01);
+  const P = i => ({ x: lm[i].x * W, y: lm[i].y * H, x01: lm[i].x, y01: lm[i].y, v: hasVis ? lm[i].visibility : 1 });
+  const ok = p => p.x01 > -0.05 && p.x01 < 1.05 && p.y01 > -0.05 && p.y01 < 1.05 && p.v > 0.3;
+
+  // shoulder, elbow, wrist, hip, knee, ankle
+  const sides = [[11, 13, 15, 23, 25, 27], [12, 14, 16, 24, 26, 28]]
+    .map(ids => { const [s, e, w, h, k, a] = ids.map(P); return { s, e, w, h, k, a }; });
+  const arms = sides.filter(x => ok(x.s) && ok(x.e) && ok(x.w));
+  if (!arms.length) return { seen: false };
+
+  // Must be lying down: torso more horizontal than vertical
+  const torso = sides.find(x => ok(x.s) && ok(x.h));
+  if (torso && Math.abs(torso.s.y - torso.h.y) > Math.abs(torso.s.x - torso.h.x)) return { seen: true, plank: false };
+
+  const ang = arms.reduce((t, a) => t + angle(a.s, a.e, a.w), 0) / arms.length;
+  const len = arms.reduce((m, a) => Math.max(m, dist(a.s, a.e) + dist(a.e, a.w)), 0);
+  armLen = Math.max(len, armLen * 0.995);
+  const lift = arms.reduce((t, a) => t + (a.w.y - a.s.y), 0) / arms.length;
+  const score = (clamp01((ang - 70) / 100) + clamp01(lift / (armLen * 0.85))) / 2;
+
+  // Body line: shoulder - hip - ankle (or knee) should be straight
+  let form = null;
+  const leg = sides.find(x => ok(x.s) && ok(x.h) && (ok(x.a) || ok(x.k)));
+  if (leg) {
+    const s = leg.s, h = leg.h, f = ok(leg.a) ? leg.a : leg.k;
+    const bend = 180 - angle(s, h, f);
+    if (Math.abs(f.x - s.x) > 1) {
+      const lineY = s.y + (f.y - s.y) * (h.x - s.x) / (f.x - s.x);
+      if (h.y > lineY && bend > 20) form = "sag";        // hips below the line (image y grows downward)
+      else if (h.y < lineY && bend > 25) form = "pike";  // hips above the line
+    }
+  }
+  return { seen: true, plank: true, score, form };
+}
+
+// ================= rep tracker (shared by both modes) =================
+// Emits: onRep({clean, fast}), onShallow(), onNoLockout()
+const tracker = {
+  phase: "wait", smooth: null, minUp: 1, maxDown: 0, risen: false, topAt: 0, formFrames: 0, dirty: false,
+  reset() { Object.assign(this, { phase: "wait", smooth: null, minUp: 1, maxDown: 0, risen: false, formFrames: 0, dirty: false }); },
+  update(pose, ev) {
+    if (!pose.plank) { this.formFrames = 0; return; }
+    this.smooth = this.smooth == null ? pose.score : this.smooth * 0.5 + pose.score * 0.5;
+    const v = this.smooth, now = performance.now();
+
+    // form must be wrong for ~1/4 second before we yell
+    this.formFrames = pose.form ? this.formFrames + 1 : 0;
+    if (this.formFrames > 7 && this.phase !== "wait") { this.dirty = true; ev.onForm?.(pose.form); }
+
+    if (this.phase === "wait") {
+      if (v > UP) { this.phase = "up"; this.topAt = now; this.minUp = 1; }
+    } else if (this.phase === "up") {
+      this.minUp = Math.min(this.minUp, v);
+      if (v < DOWN) { this.phase = "down"; this.risen = false; }
+      else if (v > UP && this.minUp < 0.65) { ev.onShallow?.(); this.minUp = 1; this.dirty = false; }
+      else if (v > UP) { this.topAt = now; this.minUp = Math.min(1, this.minUp + 0.02); }
+    } else if (this.phase === "down") {
+      if (v > 0.6 && v < UP) this.risen = true;
+      if (this.risen && v < DOWN) { ev.onNoLockout?.(); this.risen = false; }
+      if (v > UP) {
+        const fast = now - this.topAt < 500;
+        ev.onRep?.({ clean: !this.dirty && !fast, fast });
+        this.phase = "up"; this.topAt = now; this.minUp = 1; this.dirty = false;
+      }
+    }
+  },
+};
+
+// ================= session state =================
+let mode = null;           // null | "free" | "drill"
+let setReps = 0, sessReps = 0, sessClean = 0, cleanRun = 0, lastRepAt = 0, goalAnnounced = false;
+let lostSince = 0;
+
+function addRep(clean) {
+  const t = todayRec();
+  const before = t.reps;
+  t.reps++; sessReps++; setReps++;
+  if (clean) { t.clean++; sessClean++; cleanRun++; } else cleanRun = 0;
+  data.best = Math.max(data.best, setReps);
+  save(); renderStats();
+  lastRepAt = performance.now();
+
+  if (before < data.goal && t.reps >= data.goal && !goalAnnounced) {
+    goalAnnounced = true;
+    setTimeout(() => say(`עמדת ביעד היומי! ${data.goal} שכיבות! כל הכבוד, חייל!`), 700);
+  } else if (mode === "free") {
+    const left = data.goal - t.reps;
+    if (left === 10) setTimeout(() => say("עוד עשר ליעד! תן הכל!", { interrupt: false }), 500);
+    else if (before < data.goal / 2 && t.reps >= data.goal / 2) setTimeout(() => say("חצי מהיעד! אל תעצור!", { interrupt: false }), 500);
+    else if (clean && cleanRun % 5 === 0) setTimeout(() => say(pick(LINES.praise), { interrupt: false }), 500);
+  }
+}
+
+const freeEvents = {
+  onRep({ clean, fast }) {
+    addRep(clean);
+    $("count").textContent = setReps;
+    say(String(setReps));
+    if (fast) setTimeout(() => correct("fast"), 600);
+  },
+  onShallow: () => correct("shallow"),
+  onNoLockout: () => correct("lockout"),
+  onForm: f => correct(f),
+};
+
+// ================= drill mode: the commander gives orders =================
+function buildProgram(L) {
+  const r = n => n * L;
+  return [
+    { type: "reps", n: 3 + r(2) },
+    { type: "rest", sec: 20 },
+    { type: "cadence", n: 3 + r(2) },
+    { type: "holdDown", sec: 2 + r(2) },
+    { type: "rest", sec: 20 },
+    { type: "holdUp", sec: 10 + r(10) },
+    { type: "reps", n: 2 + r(3) },
+    { type: "rest", sec: 15 },
+    { type: "cadence", n: 2 + r(2), hold: true },
+    { type: "reps", n: 5 + r(3), final: true },
+  ];
+}
+
+const drill = {
+  steps: [], i: -1, step: null, t0: 0, sub: null, done: 0, held: 0, lastTick: 0, warned: 0,
+
+  start() {
+    this.steps = buildProgram(data.level);
+    this.i = -1;
+    say(pick(LINES.start));
+    setTimeout(() => mode === "drill" && this.next(), 2500);
+  },
+
+  next() {
+    this.i++;
+    if (this.i >= this.steps.length) return finish(true);
+    const s = this.step = this.steps[this.i];
+    this.t0 = performance.now(); this.done = 0; this.held = 0; this.lastTick = 0; this.warned = 0; this.lastFrame = 0;
+    setReps = 0;
+    $("count").textContent = "";
+    tracker.reset();
+    switch (s.type) {
+      case "reps":
+        order(s.final ? `סט אחרון! ${s.n} שכיבות!` : `תן לי ${s.n} שכיבות!`);
+        $("count").textContent = 0;
+        break;
+      case "cadence":
+        order(`לפי הקצב שלי! ${s.n} שכיבות. רק כשאני אומר!`);
+        this.sub = { want: "ready", at: performance.now() + 3000 };
+        $("count").textContent = 0;
+        break;
+      case "holdDown":
+        order(`למטה, ותחזיק ${s.sec} שניות!`);
+        break;
+      case "holdUp":
+        order(`פלאנק על ידיים ישרות! ${s.sec} שניות! גוף ישר!`);
+        break;
+      case "rest":
+        order(`מנוחה! ${s.sec} שניות.`);
+        break;
+    }
+  },
+
+  // called every frame
+  tick(pose) {
+    const s = this.step;
+    if (!s) return;
+    const now = performance.now(), v = tracker.smooth;
+    const inPlank = pose?.plank;
+
+    if (s.type === "rest") {
+      const left = Math.ceil(s.sec - (now - this.t0) / 1000);
+      $("count").textContent = Math.max(0, left);
+      if (left === 5 && this.lastTick !== 5) { this.lastTick = 5; say("חמש שניות! להתכונן!"); }
+      if (left <= 0) this.next();
+      return;
+    }
+
+    if (pose && pose.seen === false) return;   // handled by the "not seen" warning
+
+    if (s.type === "reps") {
+      tracker.update(pose, {
+        onRep: ({ clean, fast }) => {
+          this.done++; addRep(clean);
+          $("count").textContent = this.done;
+          if (this.done >= s.n) { say(this.done + "! " + pick(LINES.praise)); setTimeout(() => mode === "drill" && this.next(), 1500); this.step = null; }
+          else { say(String(this.done)); if (fast) setTimeout(() => correct("fast"), 600); }
+        },
+        onShallow: () => correct("shallow"),
+        onNoLockout: () => correct("lockout"),
+        onForm: f => correct(f),
+      });
+      const idleFrom = Math.max(this.t0, lastRepAt);
+      if (now - idleFrom > 7000 && now - this.warned > 7000) { this.warned = now; say(pick(LINES.idle)); }
+      return;
+    }
+
+    tracker.update(pose, { onForm: f => correct(f) });
+    if (v == null || !inPlank) {
+      if (now - this.t0 > 6000 && now - this.warned > 6000) { this.warned = now; correct("notPlank"); }
+      return;
+    }
+
+    if (s.type === "cadence") {
+      const c = this.sub;
+      if (c.want === "ready") {                       // wait at the top
+        if (v > UP && now > c.at) { c.want = "down"; c.at = now + 3500; say("למטה!"); hint("למטה!"); }
+      } else if (c.want === "down") {
+        if (v < DOWN) {
+          if (s.hold) { c.want = "hold"; c.at = now + 1500; say("החזק!"); hint("החזק!"); }
+          else { c.want = "up"; c.at = now + 3500; say("למעלה!"); hint("למעלה!"); }
+        } else if (now > c.at) { c.at = now + 3500; say("יותר נמוך! למטה!"); }
+      } else if (c.want === "hold") {
+        if (v > 0.6) { c.want = "down"; c.at = now + 3500; say("אמרתי להחזיק! שוב למטה!"); }
+        else if (now > c.at) { c.want = "up"; c.at = now + 3500; say("למעלה!"); hint("למעלה!"); }
+      } else if (c.want === "up") {
+        if (v > UP) {
+          this.done++; addRep(!tracker.dirty); tracker.dirty = false;
+          $("count").textContent = this.done;
+          if (this.done >= s.n) { say(pick(LINES.praise)); this.step = null; setTimeout(() => mode === "drill" && this.next(), 1500); }
+          else { c.want = "ready"; c.at = now + 700 + Math.random() * 1300; say(String(this.done)); }
+        } else if (now > c.at) { c.at = now + 3500; say("למעלה! עד הסוף!"); }
+      }
+      return;
+    }
+
+    // holds: holdDown = chest low, holdUp = straight arms with a straight body
+    const holding = s.type === "holdDown" ? v < 0.55 : v > UP && !pose.form;
+    const dt = this.lastFrame ? Math.min(0.2, (now - this.lastFrame) / 1000) : 0;
+    this.lastFrame = now;
+    if (holding) {
+      this.held += dt;
+      const left = Math.ceil(s.sec - this.held);
+      $("count").textContent = Math.max(0, left);
+      if (left !== this.lastTick && left <= 3 && left > 0) { this.lastTick = left; say(String(left)); }
+      if (this.held >= s.sec) {
+        say(s.type === "holdDown" ? "למעלה! יפה!" : "שחרר! עבודה טובה!");
+        this.step = null; this.lastFrame = 0;
+        setTimeout(() => mode === "drill" && this.next(), 1500);
+      }
+    } else if (this.held > 0.3 && now - this.warned > 3000) {
+      this.warned = now;
+      say(s.type === "holdDown" ? "אמרתי להחזיק למטה!" : (pose.form ? "גוף ישר! אל תשבור!" : "ידיים ישרות! תחזיק!"));
+    }
+  },
+};
+
+function order(text) { $("order").textContent = text; say(text); }
+function hint(text, bad = false) { $("hint").textContent = text; $("hint").className = bad ? "hint bad" : "hint"; }
+
+// ================= main loop =================
+function loop() {
+  if (!mode) return;
+  if (video.currentTime !== lastTime && video.videoWidth) {
+    lastTime = video.currentTime;
+    if (canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
+    const result = landmarker.detectForVideo(video, performance.now());
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const lm = result.landmarks?.[0];
+    const pose = lm ? readPose(lm) : { seen: false };
+
+    if (lm) {
+      const color = pose.form ? "#ff5c5c" : "#3ddc84";
+      draw.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, { color, lineWidth: 4 });
+      draw.drawLandmarks(lm, { color: "#fff", radius: 3 });
+    }
+
+    const now = performance.now();
+    if (!pose.seen) {
+      hint("לא רואים אותך – תתרחק / תזיז את הטלפון", true);
+      if (!lostSince) lostSince = now;
+      if (now - lostSince > 4000) correct("notSeen");
+    } else {
+      lostSince = 0;
+      if (!pose.plank) hint("תיכנס לתנוחת שכיבה (הטלפון מהצד)", true);
+      else if (pose.form === "sag") hint("האגן נופל!", true);
+      else if (pose.form === "pike") hint("האגן גבוה מדי!", true);
+      else if (mode === "free") hint(tracker.phase === "wait" ? "ישר ידיים כדי להתחיל" : tracker.phase === "down" ? "למעלה!" : "למטה");
+      else hint("");
+    }
+
+    if (mode === "free") {
+      if (pose.seen) tracker.update(pose, freeEvents);
+      if (setReps > 0 && now - lastRepAt > 9000 && now - lastSpoke > 9000) say(pick(LINES.idle));
+    } else {
+      drill.tick(pose.seen ? pose : (drill.step?.type === "rest" ? null : pose));
+    }
+  }
+  requestAnimationFrame(loop);
+}
+
+// ================= start / stop =================
+async function createLandmarker(delegate) {
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+  return PoseLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+      delegate,
+    },
+    runningMode: "VIDEO",
+    numPoses: 1,
+  });
+}
+
+let wakeLock = null;
+async function begin(m) {
+  say(" ");   // iOS: unlock speech inside the tap
+  $("startBox").hidden = true;
+  $("summary").hidden = true;
+  $("stopBtn").hidden = false;
+  try {
+    if (!video.srcObject) {
+      hint("פותח מצלמה...");
+      video.srcObject = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false,
+      });
+      await video.play();
+    }
+    if (!landmarker) {
+      hint("טוען מודל...");
+      try { landmarker = await createLandmarker("GPU"); }
+      catch { landmarker = await createLandmarker("CPU"); }
+      draw = new DrawingUtils(ctx);
+    }
+    try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
+  } catch (e) {
+    hint("שגיאה: " + e.message, true);
+    $("startBox").hidden = false;
+    $("stopBtn").hidden = true;
+    return;
+  }
+
+  mode = m;
+  setReps = sessReps = sessClean = cleanRun = 0;
+  lastRepAt = performance.now();
+  goalAnnounced = todayRec().reps >= data.goal;
+  tracker.reset();
+  $("order").textContent = "";
+  $("count").textContent = m === "free" ? "0" : "";
+  if (m === "free") say(pick(LINES.start));
+  else drill.start();
+  loop();
+}
+
+function finish(completed) {
+  if (!mode) return;
+  const wasDrill = mode === "drill";
+  mode = null;
+  drill.step = null;
+  try { wakeLock?.release(); } catch {}
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  $("startBox").hidden = false;
+  $("stopBtn").hidden = true;
+  $("order").textContent = "";
+  hint("בחר אימון");
+
+  const t = todayRec(), left = Math.max(0, data.goal - t.reps);
+  const pct = sessReps ? Math.round(sessClean / sessReps * 100) : 0;
+  $("summary").hidden = false;
+  $("summary").innerHTML = `
+    <b>${wasDrill ? (completed ? "🪖 סיימת את האימון של המפקד!" : "🪖 עזבת באמצע...") : "💪 סיכום אימון"}</b>
+    <div class="stats">
+      <div><b>${sessReps}</b><span class="muted">שכיבות</span></div>
+      <div><b>${pct}%</b><span class="muted">טכניקה נקייה</span></div>
+      <div><b>${left}</b><span class="muted">נשארו להיום</span></div>
+    </div>`;
+
+  let line;
+  if (wasDrill && !completed) line = "ברחת באמצע, חייל? מחר אני מצפה ליותר!";
+  else if (left === 0) line = `סיימת. ${sessReps} שכיבות. היעד היומי הושג. השתחרר!`;
+  else line = `${sessReps} שכיבות. נשארו לך עוד ${left} להיום. אני מחכה!`;
+  say(line);
+}
+
+$("freeBtn").addEventListener("click", () => begin("free"));
+$("drillBtn").addEventListener("click", () => begin("drill"));
+$("stopBtn").addEventListener("click", () => finish(false));
+</script>
+</body>
+</html>
