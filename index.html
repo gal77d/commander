@@ -214,9 +214,44 @@ function loadVoice() {
 }
 try { loadVoice(); speechSynthesis.onvoiceschanged = loadVoice; } catch {}
 
+// Recorded male voice: voice.json maps each sentence to an mp3 (base64).
+let audioCtx = null, clips = {}, buffers = {}, playing = null, queue = [];
+fetch("voice.json").then(r => r.ok ? r.json() : {}).then(j => { clips = j; }).catch(() => {});
+
+function unlockAudio() {
+  try {
+    audioCtx ??= new (window.AudioContext || window.webkitAudioContext)();
+    audioCtx.resume();
+  } catch {}
+}
+
+async function bufferFor(text) {
+  if (buffers[text]) return buffers[text];
+  const b64 = clips[text];
+  if (!b64 || !audioCtx) return null;
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  return (buffers[text] = await audioCtx.decodeAudioData(bytes.buffer));
+}
+
+function playNext() {
+  if (playing || !queue.length) return;
+  const buf = queue.shift();
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  src.connect(audioCtx.destination);
+  src.onended = () => { if (playing === src) { playing = null; playNext(); } };
+  playing = src;
+  src.start();
+}
+
 let lastSpoke = 0;
-function say(text, { interrupt = true } = {}) {
+async function say(text, { interrupt = true } = {}) {
   lastSpoke = performance.now();
+  if (clips[text] && audioCtx) {
+    if (interrupt) { queue = []; const p = playing; playing = null; try { p?.stop(); } catch {} }
+    try { const buf = await bufferFor(text); queue.push(buf); playNext(); return; } catch {}
+  }
+  if (Object.keys(clips).length) console.warn("no recording for:", text);
   try {
     if (interrupt) speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
@@ -227,6 +262,9 @@ function say(text, { interrupt = true } = {}) {
     speechSynthesis.speak(u);
   } catch {}
 }
+
+// decode everything in the background so counting has no delay
+function warmUp() { for (const t of Object.keys(clips)) bufferFor(t).catch(() => {}); }
 
 const LINES = {
   start: ["קום, חייל! תיכנס לתנוחה!", "לתנוחת שכיבה! עכשיו!", "יאללה חייל, לרצפה!"],
@@ -350,7 +388,7 @@ function addRep(clean) {
 
   if (before < data.goal && t.reps >= data.goal && !goalAnnounced) {
     goalAnnounced = true;
-    setTimeout(() => say(`עמדת ביעד היומי! ${data.goal} שכיבות! כל הכבוד, חייל!`), 700);
+    setTimeout(() => say("עמדת ביעד היומי! כל הכבוד, חייל!"), 700);
   } else if (mode === "free") {
     const left = data.goal - t.reps;
     if (left === 10) setTimeout(() => say("עוד עשר ליעד! תן הכל!", { interrupt: false }), 500);
@@ -450,7 +488,7 @@ const drill = {
         onRep: ({ clean, fast }) => {
           this.done++; addRep(clean);
           $("count").textContent = this.done;
-          if (this.done >= s.n) { say(this.done + "! " + pick(LINES.praise)); setTimeout(() => mode === "drill" && this.next(), 1500); this.step = null; }
+          if (this.done >= s.n) { say(String(this.done)); setTimeout(() => say(pick(LINES.praise), { interrupt: false }), 300); setTimeout(() => mode === "drill" && this.next(), 1500); this.step = null; }
           else { say(String(this.done)); if (fast) setTimeout(() => correct("fast"), 600); }
         },
         onShallow: () => correct("shallow"),
@@ -572,7 +610,8 @@ async function createLandmarker(delegate) {
 
 let wakeLock = null;
 async function begin(m) {
-  say(" ");   // iOS: unlock speech inside the tap
+  unlockAudio();   // iOS: audio must be unlocked inside the tap
+  warmUp();
   $("startBox").hidden = true;
   $("summary").hidden = true;
   $("stopBtn").hidden = false;
@@ -635,8 +674,8 @@ function finish(completed) {
 
   let line;
   if (wasDrill && !completed) line = "ברחת באמצע, חייל? מחר אני מצפה ליותר!";
-  else if (left === 0) line = `סיימת. ${sessReps} שכיבות. היעד היומי הושג. השתחרר!`;
-  else line = `${sessReps} שכיבות. נשארו לך עוד ${left} להיום. אני מחכה!`;
+  else if (left === 0) line = "סיימת. היעד היומי הושג. השתחרר!";
+  else line = "לא רע. אבל היעד של היום עוד לא נגמר. אני מחכה!";
   say(line);
 }
 
