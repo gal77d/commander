@@ -74,7 +74,8 @@
     </div>
     <div class="bar"><div id="barFill"></div></div>
     <!-- runs the iPhone shortcut that marks today as done, so the app-lock automation lets apps open -->
-    <a id="unlockBtn" class="unlock" href="shortcuts://run-shortcut?name=Commander%20Done" hidden>🔓 פתח את האפליקציות להיום</a>
+    <a id="unlockBtn" class="unlock" href="#" hidden></a>
+    <div id="unlockInfo" class="muted" style="margin-top:8px"></div>
   </div>
 
   <div class="stage">
@@ -115,6 +116,17 @@
       <b>יעד יומי</b>
       <input type="number" id="goalInput" min="5" max="1000" step="5">
     </div>
+    <div class="row" style="margin-top:12px">
+      <b>פתיחת אפליקציות</b>
+      <select id="modeInput" style="font-size:16px;padding:6px;border-radius:10px;background:var(--cell);color:var(--fg);border:1px solid #333">
+        <option value="day">יום שלם אחרי היעד</option>
+        <option value="time">זמן לכל שכיבה</option>
+      </select>
+    </div>
+    <div id="perRepBox" style="margin-top:10px">
+      <div class="row"><span>כל שכיבה שווה</span><b id="perRepLabel"></b></div>
+      <input type="range" id="perRepInput" min="30" max="120" step="15" style="width:100%">
+    </div>
     <label class="row" style="margin-top:12px">
       <b>להציג שלד על הגוף</b>
       <input type="checkbox" id="skeletonInput" style="width:22px;height:22px">
@@ -140,7 +152,7 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 // ================= storage (everything stays on the phone) =================
 const KEY = "commander_v1";
-let data = { goal: 100, level: 1, best: 0, days: {}, skeleton: true };
+let data = { goal: 100, level: 1, best: 0, days: {}, skeleton: true, mode: "day", perRep: 60, unlockUntil: 0 };
 try { Object.assign(data, JSON.parse(localStorage.getItem(KEY)) || {}); } catch {}
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch {} };
 
@@ -168,7 +180,7 @@ function renderStats() {
   $("goalShow").textContent = data.goal;
   $("barFill").style.width = Math.min(100, t.reps / data.goal * 100) + "%";
   $("todayIcon").textContent = t.reps >= data.goal ? "✅" : "⏳";
-  $("unlockBtn").hidden = t.reps < data.goal;
+  renderUnlock(t);
   const s = streak();
   $("streak").textContent = s ? `🔥 ${s} ימים ברצף` : "";
 
@@ -202,6 +214,58 @@ $("goalInput").addEventListener("change", e => {
   if (v >= 5 && v <= 1000) { data.goal = v; save(); renderStats(); }
   else e.target.value = data.goal;
 });
+
+// ---- unlocking the locked apps (via the iPhone shortcut "Commander Done") ----
+// The shortcut saves the text it gets into commander.txt; the app-lock automation lets apps open
+// while that yyyyMMddHHmmss stamp is later than "now".
+const stamp = d => dayKey(d).replaceAll("-", "") +
+  [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, "0")).join("");
+const shortcutUrl = until => "shortcuts://run-shortcut?name=Commander%20Done&input=text&text=" + stamp(until);
+const fmtTime = sec => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+const hhmm = ms => new Date(ms).toTimeString().slice(0, 5);
+const bankSec = t => Math.max(0, t.reps - (t.spent || 0)) * data.perRep;
+
+function renderUnlock(t) {
+  const btn = $("unlockBtn"), info = $("unlockInfo");
+  const open = data.unlockUntil > Date.now() ? `פתוח עד ${hhmm(data.unlockUntil)}` : "";
+  if (data.mode === "day") {
+    btn.hidden = t.reps < data.goal;
+    btn.textContent = "🔓 פתח את האפליקציות להיום";
+    info.textContent = "";
+  } else {
+    const bank = bankSec(t);
+    btn.hidden = bank === 0;
+    btn.textContent = `🔓 פתח ל-${fmtTime(bank)} דקות`;
+    info.textContent = [bank ? `צברת ${fmtTime(bank)} דקות` : "כל שכיבה = " + fmtTime(data.perRep) + " דקות", open].filter(Boolean).join(" · ");
+  }
+}
+
+$("unlockBtn").addEventListener("click", e => {
+  e.preventDefault();
+  const t = todayRec();
+  let until;
+  if (data.mode === "day") {
+    until = new Date(); until.setHours(23, 59, 59, 0);
+  } else {
+    const bank = bankSec(t);
+    if (!bank) return;
+    until = new Date(Math.max(Date.now(), data.unlockUntil || 0) + bank * 1000);
+    t.spent = t.reps;
+  }
+  data.unlockUntil = until.getTime();
+  save(); renderStats();
+  location.href = shortcutUrl(until);
+});
+
+$("modeInput").value = data.mode;
+$("perRepInput").value = data.perRep;
+const renderMode = () => {
+  $("perRepBox").hidden = data.mode !== "time";
+  $("perRepLabel").textContent = fmtTime(data.perRep) + " דקות";
+};
+renderMode();
+$("modeInput").addEventListener("change", e => { data.mode = e.target.value; save(); renderMode(); renderStats(); });
+$("perRepInput").addEventListener("input", e => { data.perRep = +e.target.value; save(); renderMode(); renderStats(); });
 
 $("skeletonInput").checked = data.skeleton;
 $("skeletonInput").addEventListener("change", e => { data.skeleton = e.target.checked; save(); });
@@ -436,7 +500,7 @@ function addRep(clean) {
 
   if (before < data.goal && t.reps >= data.goal && !goalAnnounced) {
     goalAnnounced = true;
-    $("order").textContent = "🔓 סיימת! לחץ למטה על \"פתח את האפליקציות להיום\"";
+    if (data.mode === "day") $("order").textContent = "🔓 סיימת! לחץ למטה על \"פתח את האפליקציות להיום\"";
     setTimeout(() => say("עמדת ביעד היומי! כל הכבוד, חייל!"), 700);
   } else if (mode === "free") {
     const left = data.goal - t.reps;
