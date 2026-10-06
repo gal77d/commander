@@ -375,7 +375,17 @@ const tracker = {
 // ================= session state =================
 let mode = null;           // null | "free" | "drill"
 let setReps = 0, sessReps = 0, sessClean = 0, cleanRun = 0, lastRepAt = 0, goalAnnounced = false;
-let lostSince = 0;
+let lostSince = 0, inPlankAt = 0, phaseAt = 0, lastPhase = "wait";
+
+// Free mode: getting out of push-up position ends the set and the counter starts again from 0
+function endSet() {
+  const n = setReps;
+  setReps = 0;
+  tracker.reset();
+  $("count").textContent = "0";
+  $("order").textContent = `סט קודם: ${n} שכיבות`;
+  say("סוף סט! קח מנוחה.");
+}
 
 function addRep(clean) {
   const t = todayRec();
@@ -586,7 +596,12 @@ function loop() {
 
     if (mode === "free") {
       if (pose.seen) tracker.update(pose, freeEvents);
-      if (setReps > 0 && now - lastRepAt > 9000 && now - lastSpoke > 9000) say(pick(LINES.idle));
+      if (pose.seen && pose.plank) inPlankAt = now;
+      if (tracker.phase !== lastPhase) { lastPhase = tracker.phase; phaseAt = now; }
+      const offPlank = now - inPlankAt > 2500;                          // stood up / knelt / left the frame
+      const lyingDown = tracker.phase === "down" && now - phaseAt > 6000;  // lying on the floor
+      if (setReps > 0 && (offPlank || lyingDown)) endSet();
+      else if (setReps > 0 && now - lastRepAt > 9000 && now - lastSpoke > 9000) say(pick(LINES.idle));
     } else {
       drill.tick(pose.seen ? pose : (drill.step?.type === "rest" ? null : pose));
     }
@@ -639,6 +654,7 @@ async function begin(m) {
 
   mode = m;
   setReps = sessReps = sessClean = cleanRun = 0;
+  inPlankAt = phaseAt = performance.now();
   lastRepAt = performance.now();
   goalAnnounced = todayRec().reps >= data.goal;
   tracker.reset();
