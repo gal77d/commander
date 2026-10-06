@@ -217,11 +217,12 @@ $("goalInput").addEventListener("change", e => {
 });
 
 // ---- unlocking the locked apps (via the iPhone shortcut "Commander Done") ----
-// The shortcut saves the text it gets into commander.txt; the app-lock automation lets apps open
-// while that yyyyMMddHHmmss stamp is later than "now".
-const stamp = d => dayKey(d).replaceAll("-", "") +
-  [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, "0")).join("");
-const shortcutUrl = until => "shortcuts://run-shortcut?name=Commander%20Done&input=text&text=" + stamp(until);
+// The shortcut saves the text it gets into commander.txt. The app-lock automation reads it as a date
+// (local ISO time, e.g. 2026-10-06T22:40:00): if it's already past, the app is closed right away;
+// otherwise the automation waits until then and sends you back to the home screen.
+const isoLocal = d => dayKey(d) + "T" +
+  [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, "0")).join(":");
+const shortcutUrl = until => "shortcuts://run-shortcut?name=Commander%20Done&input=text&text=" + isoLocal(until);
 const fmtTime = sec => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
 const hhmm = ms => new Date(ms).toTimeString().slice(0, 5);
 const bankSec = t => Math.max(0, t.reps - (t.spent || 0)) * data.perRep;
