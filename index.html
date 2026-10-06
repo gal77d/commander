@@ -111,6 +111,10 @@
       <b>יעד יומי</b>
       <input type="number" id="goalInput" min="5" max="1000" step="5">
     </div>
+    <label class="row" style="margin-top:12px">
+      <b>להציג שלד על הגוף</b>
+      <input type="checkbox" id="skeletonInput" style="width:22px;height:22px">
+    </label>
   </div>
 
   <div class="card">
@@ -132,7 +136,7 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 // ================= storage (everything stays on the phone) =================
 const KEY = "commander_v1";
-let data = { goal: 100, level: 1, best: 0, days: {} };
+let data = { goal: 100, level: 1, best: 0, days: {}, skeleton: true };
 try { Object.assign(data, JSON.parse(localStorage.getItem(KEY)) || {}); } catch {}
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch {} };
 
@@ -193,6 +197,9 @@ $("goalInput").addEventListener("change", e => {
   if (v >= 5 && v <= 1000) { data.goal = v; save(); renderStats(); }
   else e.target.value = data.goal;
 });
+
+$("skeletonInput").checked = data.skeleton;
+$("skeletonInput").addEventListener("change", e => { data.skeleton = e.target.checked; save(); });
 
 function renderLevels() {
   for (const b of $("levels").children) b.classList.toggle("on", +b.dataset.l === data.level);
@@ -293,6 +300,32 @@ const UP = 0.75, DOWN = 0.45;
 const video = $("video"), canvas = $("canvas"), ctx = canvas.getContext("2d");
 let landmarker, draw, lastTime = -1, armLen = 0;
 
+// One Euro filter: removes the frame-to-frame jitter of the detected points,
+// but follows quickly when you really move.
+const MIN_CUTOFF = 0.8, BETA = 2, D_CUTOFF = 1;
+let filt = null, filtT = 0;
+const alpha = (cutoff, dt) => 1 / (1 + 1 / (2 * Math.PI * cutoff * dt));
+function smoothLandmarks(lm, tMs) {
+  const dt = filt ? Math.max(1 / 120, (tMs - filtT) / 1000) : 0;
+  if (!filt || dt > 0.5) {   // first frame, or the person was lost for a while
+    filt = lm.map(p => ({ x: p.x, y: p.y, dx: 0, dy: 0 }));
+    filtT = tMs;
+    return lm;
+  }
+  filtT = tMs;
+  return lm.map((p, i) => {
+    const f = filt[i];
+    const ad = alpha(D_CUTOFF, dt);
+    f.dx = ad * ((p.x - f.x) / dt) + (1 - ad) * f.dx;
+    f.dy = ad * ((p.y - f.y) / dt) + (1 - ad) * f.dy;
+    const speed = Math.hypot(f.dx, f.dy);
+    const a = alpha(MIN_CUTOFF + BETA * speed, dt);
+    f.x = a * p.x + (1 - a) * f.x;
+    f.y = a * p.y + (1 - a) * f.y;
+    return { ...p, x: f.x, y: f.y };
+  });
+}
+
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const clamp01 = v => Math.max(0, Math.min(1, v));
 function angle(a, b, c) {
@@ -332,8 +365,8 @@ function readPose(lm) {
     const bend = 180 - angle(s, h, f);
     if (Math.abs(f.x - s.x) > 1) {
       const lineY = s.y + (f.y - s.y) * (h.x - s.x) / (f.x - s.x);
-      if (h.y > lineY && bend > 20) form = "sag";        // hips below the line (image y grows downward)
-      else if (h.y < lineY && bend > 25) form = "pike";  // hips above the line
+      if (h.y > lineY && bend > 25) form = "sag";        // hips below the line (image y grows downward)
+      else if (h.y < lineY && bend > 30) form = "pike";  // hips above the line
     }
   }
   return { seen: true, plank: true, score, form };
@@ -349,9 +382,9 @@ const tracker = {
     this.smooth = this.smooth == null ? pose.score : this.smooth * 0.5 + pose.score * 0.5;
     const v = this.smooth, now = performance.now();
 
-    // form must be wrong for ~1/4 second before we yell
+    // form must be wrong for ~1/2 second before we yell
     this.formFrames = pose.form ? this.formFrames + 1 : 0;
-    if (this.formFrames > 7 && this.phase !== "wait") { this.dirty = true; ev.onForm?.(pose.form); }
+    if (this.formFrames > 14 && this.phase !== "wait") { this.dirty = true; ev.onForm?.(pose.form); }
 
     if (this.phase === "wait") {
       if (v > UP) { this.phase = "up"; this.topAt = now; this.minUp = 1; }
@@ -571,12 +604,13 @@ function loop() {
     if (canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
     const result = landmarker.detectForVideo(video, performance.now());
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const lm = result.landmarks?.[0];
+    const raw = result.landmarks?.[0];
+    const lm = raw ? smoothLandmarks(raw, performance.now()) : null;
     const pose = lm ? readPose(lm) : { seen: false };
 
-    if (lm) {
+    if (lm && data.skeleton) {
       const color = pose.form ? "#ff5c5c" : "#3ddc84";
-      draw.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, { color, lineWidth: 4 });
+      draw.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, { color, lineWidth: 3 });
       draw.drawLandmarks(lm, { color: "#fff", radius: 3 });
     }
 
