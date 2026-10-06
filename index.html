@@ -75,6 +75,7 @@
     <div class="bar"><div id="barFill"></div></div>
     <!-- runs the iPhone shortcut that marks today as done, so the app-lock automation lets apps open -->
     <a id="unlockBtn" class="unlock" href="#" hidden></a>
+    <a id="lockBtn" class="unlock" href="#" style="background:var(--cell);color:var(--fg)" hidden>🔒 נעל עכשיו</a>
     <div id="unlockInfo" class="muted" style="margin-top:8px"></div>
   </div>
 
@@ -227,11 +228,13 @@ const bankSec = t => Math.max(0, t.reps - (t.spent || 0)) * data.perRep;
 
 function renderUnlock(t) {
   const btn = $("unlockBtn"), info = $("unlockInfo");
-  const open = data.unlockUntil > Date.now() ? `פתוח עד ${hhmm(data.unlockUntil)}` : "";
+  const isOpen = data.unlockUntil > Date.now();
+  const open = isOpen ? `פתוח עד ${hhmm(data.unlockUntil)}` : "";
+  $("lockBtn").hidden = !isOpen;
   if (data.mode === "day") {
     btn.hidden = t.reps < data.goal;
     btn.textContent = "🔓 פתח את האפליקציות להיום";
-    info.textContent = "";
+    info.textContent = open;
   } else {
     const bank = bankSec(t);
     btn.hidden = bank === 0;
@@ -249,12 +252,25 @@ $("unlockBtn").addEventListener("click", e => {
   } else {
     const bank = bankSec(t);
     if (!bank) return;
-    until = new Date(Math.max(Date.now(), data.unlockUntil || 0) + bank * 1000);
+    // earned time extends only an earlier *time* unlock, never a full-day one
+    const prev = data.unlockKind === "time" ? data.unlockUntil || 0 : 0;
+    until = new Date(Math.max(Date.now(), prev) + bank * 1000);
     t.spent = t.reps;
   }
   data.unlockUntil = until.getTime();
+  data.unlockKind = data.mode;
   save(); renderStats();
   location.href = shortcutUrl(until);
+});
+
+// writes "now" into the file, so the apps are locked from the next time they're opened
+$("lockBtn").addEventListener("click", e => {
+  e.preventDefault();
+  const now = new Date();
+  data.unlockUntil = 0;
+  data.unlockKind = null;
+  save(); renderStats();
+  location.href = shortcutUrl(now);
 });
 
 $("modeInput").value = data.mode;
