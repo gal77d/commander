@@ -118,14 +118,7 @@
       <b>יעד יומי</b>
       <input type="number" id="goalInput" min="5" max="1000" step="5">
     </div>
-    <div class="row" style="margin-top:12px">
-      <b>פתיחת אפליקציות</b>
-      <select id="modeInput" style="font-size:16px;padding:6px;border-radius:10px;background:var(--cell);color:var(--fg);border:1px solid #333">
-        <option value="day">יום שלם אחרי היעד</option>
-        <option value="time">זמן לכל שכיבה</option>
-      </select>
-    </div>
-    <div id="perRepBox" style="margin-top:10px">
+    <div id="perRepBox" style="margin-top:12px">
       <div class="row"><span>כל שכיבה שווה</span><b id="perRepLabel"></b></div>
       <input type="range" id="perRepInput" min="30" max="60" step="5" style="width:100%">
     </div>
@@ -167,8 +160,9 @@ const APP_VERSION = "2026-10-07h";
 })();
 
 const KEY = "commander_v1";
-let data = { goal: 100, level: 1, best: 0, days: {}, skeleton: true, mode: "day", perRep: 60, unlockUntil: 0 };
+let data = { goal: 100, level: 1, best: 0, days: {}, skeleton: true, perRep: 60, unlockUntil: 0 };
 try { Object.assign(data, JSON.parse(localStorage.getItem(KEY)) || {}); } catch {}
+delete data.mode;   // the "whole day after the goal" option was removed; apps open only for earned time
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch {} };
 
 const dayKey = (d = new Date()) =>
@@ -246,34 +240,23 @@ function renderUnlock(t) {
   const isOpen = data.unlockUntil > Date.now();
   const open = isOpen ? `פתוח עד ${hhmm(data.unlockUntil)}` : "";
   $("lockBtn").hidden = !isOpen;
-  if (data.mode === "day") {
-    btn.hidden = t.reps < data.goal;
-    btn.textContent = "🔓 פתח את האפליקציות להיום";
-    info.textContent = open;
-  } else {
-    const bank = bankSec(t);
-    btn.hidden = bank === 0;
-    btn.textContent = `🔓 פתח ל-${fmtTime(bank)} דקות`;
-    info.textContent = [bank ? `צברת ${fmtTime(bank)} דקות` : "כל שכיבה = " + fmtTime(data.perRep) + " דקות", open].filter(Boolean).join(" · ");
-  }
+  const bank = bankSec(t);
+  btn.hidden = bank === 0;
+  btn.textContent = `🔓 פתח ל-${fmtTime(bank)} דקות`;
+  info.textContent = [bank ? `צברת ${fmtTime(bank)} דקות` : "כל שכיבה = " + fmtTime(data.perRep) + " דקות", open].filter(Boolean).join(" · ");
 }
 
 $("unlockBtn").addEventListener("click", e => {
   e.preventDefault();
   const t = todayRec();
-  let until;
-  if (data.mode === "day") {
-    until = new Date(); until.setHours(23, 59, 59, 0);
-  } else {
-    const bank = bankSec(t);
-    if (!bank) return;
-    // earned time extends only an earlier *time* unlock, never a full-day one
-    const prev = data.unlockKind === "time" ? data.unlockUntil || 0 : 0;
-    until = new Date(Math.max(Date.now(), prev) + bank * 1000);
-    t.spent = t.reps;
-  }
+  const bank = bankSec(t);
+  if (!bank) return;
+  // earned time extends an earlier time unlock, never an old full-day one
+  const prev = data.unlockKind === "time" ? data.unlockUntil || 0 : 0;
+  const until = new Date(Math.max(Date.now(), prev) + bank * 1000);
+  t.spent = t.reps;
   data.unlockUntil = until.getTime();
-  data.unlockKind = data.mode;
+  data.unlockKind = "time";
   save(); renderStats();
   location.href = shortcutUrl(until);
 });
@@ -289,15 +272,10 @@ $("lockBtn").addEventListener("click", e => {
 });
 
 data.perRep = Math.min(60, Math.max(30, data.perRep));   // at most 1 minute per push-up
-$("modeInput").value = data.mode;
 $("perRepInput").value = data.perRep;
-const renderMode = () => {
-  $("perRepBox").hidden = data.mode !== "time";
-  $("perRepLabel").textContent = fmtTime(data.perRep) + " דקות";
-};
-renderMode();
-$("modeInput").addEventListener("change", e => { data.mode = e.target.value; save(); renderMode(); renderStats(); });
-$("perRepInput").addEventListener("input", e => { data.perRep = +e.target.value; save(); renderMode(); renderStats(); });
+const renderPerRep = () => { $("perRepLabel").textContent = fmtTime(data.perRep) + " דקות"; };
+renderPerRep();
+$("perRepInput").addEventListener("input", e => { data.perRep = +e.target.value; save(); renderPerRep(); renderStats(); });
 
 $("skeletonInput").checked = data.skeleton;
 $("skeletonInput").addEventListener("change", e => { data.skeleton = e.target.checked; save(); });
@@ -612,7 +590,6 @@ function addRep(clean) {
 
   if (before < data.goal && t.reps >= data.goal && !goalAnnounced) {
     goalAnnounced = true;
-    if (data.mode === "day") $("order").textContent = "🔓 סיימת! לחץ למטה על \"פתח את האפליקציות להיום\"";
     setTimeout(() => say("עמדת ביעד היומי! כל הכבוד, חייל!"), 700);
   } else if (mode === "free") {
     const left = data.goal - t.reps;
