@@ -85,6 +85,7 @@
     <div class="count" id="count"></div>
     <div class="order" id="order"></div>
     <div class="hint" id="hint">בחר אימון</div>
+    <div id="kneeAngle" style="position:absolute;top:8px;left:10px;font-size:13px;color:#fffa;text-shadow:0 1px 4px #000;pointer-events:none"></div>
   </div>
 
   <div id="startBox">
@@ -132,6 +133,10 @@
       <b>להציג שלד על הגוף</b>
       <input type="checkbox" id="skeletonInput" style="width:22px;height:22px">
     </label>
+    <label class="row" style="margin-top:12px">
+      <b>בדיקת ברכיים</b>
+      <input type="checkbox" id="kneeInput" style="width:22px;height:22px">
+    </label>
   </div>
 
   <div class="card">
@@ -153,8 +158,20 @@ const $ = id => document.getElementById(id);
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 // ================= storage (everything stays on the phone) =================
+const APP_VERSION = "2026-10-07b";
+(async () => {
+  try {
+    const html = await (await fetch("index.html?check=" + Date.now(), { cache: "no-store" })).text();
+    const online = html.match(/const APP_VERSION = "([^"]+)"/)?.[1];
+    if (online && online !== APP_VERSION && sessionStorage.getItem("updatedTo") !== online) {
+      sessionStorage.setItem("updatedTo", online);
+      location.replace(location.pathname + "?v=" + online);
+    }
+  } catch {}
+})();
+
 const KEY = "commander_v1";
-let data = { goal: 100, level: 1, best: 0, days: {}, skeleton: true, mode: "day", perRep: 60, unlockUntil: 0 };
+let data = { goal: 100, level: 1, best: 0, days: {}, skeleton: true, kneeCheck: true, mode: "day", perRep: 60, unlockUntil: 0 };
 try { Object.assign(data, JSON.parse(localStorage.getItem(KEY)) || {}); } catch {}
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch {} };
 
@@ -285,6 +302,8 @@ renderMode();
 $("modeInput").addEventListener("change", e => { data.mode = e.target.value; save(); renderMode(); renderStats(); });
 $("perRepInput").addEventListener("input", e => { data.perRep = +e.target.value; save(); renderMode(); renderStats(); });
 
+$("kneeInput").checked = data.kneeCheck;
+$("kneeInput").addEventListener("change", e => { data.kneeCheck = e.target.checked; save(); });
 $("skeletonInput").checked = data.skeleton;
 $("skeletonInput").addEventListener("change", e => { data.skeleton = e.target.checked; save(); });
 
@@ -477,8 +496,12 @@ function readPose(lm, wl) {
   let form = null, knees = false;
   if (wl) {
     const sh = mid3(V(11), V(12)), hp = mid3(V(23), V(24)), kn = mid3(V(25), V(26)), an = mid3(V(27), V(28));
-    // On the knees: the leg is bent at the knee (a real push-up keeps it straight)
-    knees = angle3(hp, kn, an) < 150;
+    // On the knees: the leg is clearly bent at the knee (a real push-up keeps it straight).
+    // Facing the camera the legs are often hidden and only guessed, so skip the check when they aren't visible.
+    const kneeAng = angle3(hp, kn, an);
+    const legsVisible = !hasVis || [25, 26, 27, 28].every(i => (lm[i].visibility ?? 1) > 0.5);
+    $("kneeAngle").textContent = data.kneeCheck ? `ברך ${Math.round(kneeAng)}°${legsVisible ? "" : " (לא רואה רגליים)"}` : "";
+    knees = data.kneeCheck && legsVisible && kneeAng < 140;
     if (!knees) {
       // hips should sit on the straight line shoulders -> ankles
       const line = sub3(an, sh), t = ((hp.x - sh.x) * line.x + (hp.y - sh.y) * line.y + (hp.z - sh.z) * line.z) / (len3(line) ** 2 || 1);
@@ -508,7 +531,7 @@ const tracker = {
 
     // on the knees for ~1/3 second during a rep -> that rep doesn't count
     this.kneeFrames = pose.knees ? this.kneeFrames + 1 : 0;
-    if (this.kneeFrames > 8) this.onKnees = true;
+    if (this.kneeFrames > 15) this.onKnees = true;
 
     if (this.phase === "wait") {
       if (v > UP) { this.phase = "up"; this.topAt = now; this.minUp = 1; }
@@ -524,7 +547,7 @@ const tracker = {
         const fast = now - this.topAt < 500;
         if (this.onKnees) ev.onKnees?.();
         else ev.onRep?.({ clean: !this.dirty && !fast, fast });
-        this.phase = "up"; this.topAt = now; this.minUp = 1; this.dirty = false; this.onKnees = this.kneeFrames > 8;
+        this.phase = "up"; this.topAt = now; this.minUp = 1; this.dirty = false; this.onKnees = this.kneeFrames > 15;
       }
     }
   },
@@ -691,7 +714,7 @@ const drill = {
         else if (now > c.at) { c.want = "up"; c.at = now + 3500; say("למעלה!"); hint("למעלה!"); }
       } else if (c.want === "up") {
         if (v > UP) {
-          if (tracker.kneeFrames > 8) { correct("knees"); c.want = "ready"; c.at = now + 1500; return; }
+          if (tracker.kneeFrames > 15) { correct("knees"); c.want = "ready"; c.at = now + 1500; return; }
           this.done++; addRep(!tracker.dirty); tracker.dirty = false;
           $("count").textContent = this.done;
           if (this.done >= s.n) { say(pick(LINES.praise)); this.step = null; setTimeout(() => mode === "drill" && this.next(), 1500); }
