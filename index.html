@@ -158,7 +158,7 @@ const $ = id => document.getElementById(id);
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 // ================= storage (everything stays on the phone) =================
-const APP_VERSION = "2026-10-07c";
+const APP_VERSION = "2026-10-07d";
 (async () => {
   try {
     const html = await (await fetch("index.html?check=" + Date.now(), { cache: "no-store" })).text();
@@ -455,6 +455,9 @@ function angle3(a, b, c) {
   return Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
 }
 
+// Below this "knee rise" (see readPose) you're counted as on your knees
+const KNEE_RISE_MIN = 0.05;
+
 // Height of the shoulders above the hands at the top of a push-up; learned from you while you train.
 let topLift = 0;
 
@@ -492,16 +495,20 @@ function readPose(lm, wl) {
 
   const score = Math.min(liftScore, (1 + angScore) / 2);
 
-  // Knees and body line, from 3D
-  let form = null, knees = false, legsVisible = true;
+  // On the knees? Facing the camera, the 3D knee angle is only a guess (a real test showed 164° on the toes
+  // and 162° on the knees), so use the picture instead: with the phone on the floor, a knee that is lifted
+  // off the floor (real push-up) shows up HIGHER in the picture than the feet; a knee on the floor shows up
+  // level with the feet or lower. kneeRise = how much higher the knees are than the ankles, in shoulder widths.
+  const knee2 = (P(25).y + P(26).y) / 2, ankle2 = (P(27).y + P(28).y) / 2;
+  const kneeRise = (ankle2 - knee2) / shoulderW;
+  $("kneeAngle").textContent = data.kneeCheck ? `ברך ${kneeRise.toFixed(2)}` : "";
+  const atTop = score > 0.7;
+  const knees = data.kneeCheck && atTop && kneeRise < KNEE_RISE_MIN;
+
+  // Body line, from 3D
+  let form = null, legsVisible = true;
   if (wl) {
-    const sh = mid3(V(11), V(12)), hp = mid3(V(23), V(24)), kn = mid3(V(25), V(26)), an = mid3(V(27), V(28));
-    // On the knees: the leg is clearly bent at the knee (a real push-up keeps it straight).
-    // Facing the camera the legs are often hidden and only guessed, so skip the check when they aren't visible.
-    const kneeAng = angle3(hp, kn, an);
-    legsVisible = !hasVis || [25, 26, 27, 28].every(i => (lm[i].visibility ?? 1) > 0.5);
-    $("kneeAngle").textContent = data.kneeCheck ? `ברך ${Math.round(kneeAng)}°${legsVisible ? "" : " (לא רואה רגליים)"}` : "";
-    knees = data.kneeCheck && legsVisible && kneeAng < 140;
+    const sh = mid3(V(11), V(12)), hp = mid3(V(23), V(24)), an = mid3(V(27), V(28));
     if (!knees) {
       // hips should sit on the straight line shoulders -> ankles
       const line = sub3(an, sh), t = ((hp.x - sh.x) * line.x + (hp.y - sh.y) * line.y + (hp.z - sh.z) * line.z) / (len3(line) ** 2 || 1);
@@ -511,17 +518,19 @@ function readPose(lm, wl) {
       else if (dy < 0 && bend > 30) form = "pike";  // hips above the line
     }
   }
-  return { seen: true, plank: true, score, form, knees, legsVisible };
+  return { seen: true, plank: true, score, form, knees, atTop, legsVisible };
 }
 
 // ================= rep tracker (shared by both modes) =================
 // Emits: onRep({clean, fast}), onShallow(), onNoLockout()
 const tracker = {
   phase: "wait", smooth: null, minUp: 1, maxDown: 0, risen: false, topAt: 0, formFrames: 0, dirty: false,
-  kneeFrames: 0, onKnees: false,
-  reset() { Object.assign(this, { phase: "wait", smooth: null, minUp: 1, maxDown: 0, risen: false, formFrames: 0, dirty: false, kneeFrames: 0, onKnees: false }); },
+  topFrames: 0, kneeTopFrames: 0,
+  reset() { Object.assign(this, { phase: "wait", smooth: null, minUp: 1, maxDown: 0, risen: false, formFrames: 0, dirty: false, topFrames: 0, kneeTopFrames: 0 }); },
+  // most of this rep's top frames looked like knees on the floor
+  kneeRep() { return this.topFrames >= 4 && this.kneeTopFrames > this.topFrames / 2; },
   update(pose, ev) {
-    if (!pose.plank) { this.formFrames = 0; this.kneeFrames = 0; return; }
+    if (!pose.plank) { this.formFrames = 0; return; }
     this.smooth = this.smooth == null ? pose.score : this.smooth * 0.5 + pose.score * 0.5;
     const v = this.smooth, now = performance.now();
 
@@ -530,8 +539,7 @@ const tracker = {
     if (this.formFrames > 14 && this.phase !== "wait") { this.dirty = true; ev.onForm?.(pose.form); }
 
     // on the knees for ~1/3 second during a rep -> that rep doesn't count
-    this.kneeFrames = pose.knees ? this.kneeFrames + 1 : 0;
-    if (this.kneeFrames > 15) this.onKnees = true;
+    if (pose.atTop) { this.topFrames++; if (pose.knees) this.kneeTopFrames++; }
 
     if (this.phase === "wait") {
       if (v > UP) { this.phase = "up"; this.topAt = now; this.minUp = 1; }
@@ -545,9 +553,9 @@ const tracker = {
       if (this.risen && v < DOWN) { ev.onNoLockout?.(); this.risen = false; }
       if (v > UP) {
         const fast = now - this.topAt < 500;
-        if (this.onKnees) ev.onKnees?.();
+        if (this.kneeRep()) ev.onKnees?.();
         else ev.onRep?.({ clean: !this.dirty && !fast, fast });
-        this.phase = "up"; this.topAt = now; this.minUp = 1; this.dirty = false; this.onKnees = this.kneeFrames > 15;
+        this.phase = "up"; this.topAt = now; this.minUp = 1; this.dirty = false; this.topFrames = this.kneeTopFrames = 0;
       }
     }
   },
@@ -714,7 +722,8 @@ const drill = {
         else if (now > c.at) { c.want = "up"; c.at = now + 3500; say("למעלה!"); hint("למעלה!"); }
       } else if (c.want === "up") {
         if (v > UP) {
-          if (tracker.kneeFrames > 15) { correct("knees"); c.want = "ready"; c.at = now + 1500; return; }
+          if (tracker.kneeRep()) { correct("knees"); tracker.topFrames = tracker.kneeTopFrames = 0; c.want = "ready"; c.at = now + 1500; return; }
+          tracker.topFrames = tracker.kneeTopFrames = 0;
           this.done++; addRep(!tracker.dirty); tracker.dirty = false;
           $("count").textContent = this.done;
           if (this.done >= s.n) { say(pick(LINES.praise)); this.step = null; setTimeout(() => mode === "drill" && this.next(), 1500); }
