@@ -154,7 +154,7 @@ const $ = id => document.getElementById(id);
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 // ================= storage (everything stays on the phone) =================
-const APP_VERSION = "2026-10-07g";
+const APP_VERSION = "2026-10-07h";
 (async () => {
   try {
     const html = await (await fetch("index.html?check=" + Date.now(), { cache: "no-store" })).text();
@@ -454,7 +454,15 @@ function angle3(a, b, c) {
 const KNEE_RISE_MIN = 0.05;
 
 // Height of the shoulders above the hands at the top of a push-up; learned from you while you train.
-let topLift = 0;
+// It's the 90th percentile of the last ~10 seconds, so one weird frame (moving the phone, coming close)
+// can't set an impossible "top" that no real push-up reaches.
+let topLift = 0, liftHistory = [];
+function learnTop(lift) {
+  liftHistory.push(lift);
+  if (liftHistory.length > 300) liftHistory.shift();
+  const sorted = [...liftHistory].sort((a, b) => a - b);
+  topLift = sorted[Math.floor((sorted.length - 1) * 0.9)];
+}
 
 // Reads one frame. The phone is on the floor in front of you and you face it.
 // lm = image points (0..1), wl = 3D world points. Returns
@@ -485,7 +493,7 @@ function readPose(lm, wl) {
   // compared to your own top position. Chest near the floor ~0.3 of the top, a half push-up ~0.65.
   const shoulderW = dist(sides[0].s, sides[1].s) || 1;
   const lift = arms.reduce((t, a) => t + (a.w.y - a.s.y), 0) / arms.length / shoulderW;
-  topLift = Math.max(lift, topLift * 0.9995);
+  learnTop(lift);
   const liftScore = topLift > 0 ? clamp01((lift / topLift - 0.15) / 0.85) : 1;
 
   const score = Math.min(liftScore, (1 + angScore) / 2);
@@ -874,7 +882,7 @@ async function begin(m) {
 
   mode = m;
   setReps = sessReps = sessClean = cleanRun = 0;
-  topLift = 0; smoothLandmarks.reset(); smoothWorld.reset();
+  topLift = 0; liftHistory = []; smoothLandmarks.reset(); smoothWorld.reset();
   inPlankAt = phaseAt = performance.now();
   lastRepAt = performance.now();
   goalAnnounced = todayRec().reps >= data.goal;
