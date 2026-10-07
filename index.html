@@ -505,15 +505,19 @@ function readPose(lm, wl) {
   const knee2 = (P(25).y + P(26).y) / 2, ankle2 = (P(27).y + P(28).y) / 2;
   const kneeRise = (ankle2 - knee2) / shoulderW;
   const atTop = score > 0.7;
-  // Only judge the knees when knees and feet are really inside the picture; otherwise the model just guesses them
+  // Only judge the knees when knees and feet are really inside the picture AND the model says it actually
+  // sees them. Facing the phone, the torso hides the knees; the model then still puts them inside the picture
+  // (pure guess, visibility ~0.1) and a real push-up was rejected as "on the knees". No visibility info -> don't judge.
   const legsInFrame = [25, 26, 27, 28].every(i => { const q = P(i); return q.x01 >= 0 && q.x01 <= 1 && q.y01 >= 0 && q.y01 <= 1; });
-  const knees = atTop && legsInFrame && kneeRise < KNEE_RISE_MIN;
+  const seenWell = ids => hasVis && ids.every(i => lm[i].visibility >= 0.5);
+  const legsSeen = legsInFrame && seenWell([25, 26, 27, 28]);
+  const knees = atTop && legsSeen && kneeRise < KNEE_RISE_MIN;
   if (!$("debug").hidden) $("debug").textContent =
-    `ברך ${kneeRise.toFixed(2)} · רגליים ${legsInFrame ? "בפריים" : "מחוץ לפריים"} · ${atTop ? "למעלה" : "למטה"} · מודל ${modelVariant}`;
+    `ברך ${kneeRise.toFixed(2)} · רגליים ${legsSeen ? "נראות" : legsInFrame ? "מוסתרות" : "מחוץ לפריים"} · ${atTop ? "למעלה" : "למטה"} · מודל ${modelVariant}`;
 
-  // Body line, from 3D
-  let form = null, legsVisible = true;
-  if (wl) {
+  // Body line, from 3D – only when hips and feet are really seen (same reason as the knees)
+  let form = null, legsVisible = legsSeen;
+  if (wl && seenWell([23, 24, 27, 28])) {
     const sh = mid3(V(11), V(12)), hp = mid3(V(23), V(24)), an = mid3(V(27), V(28));
     if (!knees) {
       // hips should sit on the straight line shoulders -> ankles
