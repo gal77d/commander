@@ -85,6 +85,7 @@
     <div class="count" id="count"></div>
     <div class="order" id="order"></div>
     <div class="hint" id="hint">בחר אימון</div>
+    <div id="debug" hidden style="position:absolute;top:8px;left:10px;font-size:13px;color:#fffc;text-shadow:0 1px 4px #000;pointer-events:none;direction:rtl"></div>
   </div>
 
   <div id="startBox">
@@ -153,7 +154,7 @@ const $ = id => document.getElementById(id);
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 // ================= storage (everything stays on the phone) =================
-const APP_VERSION = "2026-10-07f";
+const APP_VERSION = "2026-10-07g";
 (async () => {
   try {
     const html = await (await fetch("index.html?check=" + Date.now(), { cache: "no-store" })).text();
@@ -496,7 +497,11 @@ function readPose(lm, wl) {
   const knee2 = (P(25).y + P(26).y) / 2, ankle2 = (P(27).y + P(28).y) / 2;
   const kneeRise = (ankle2 - knee2) / shoulderW;
   const atTop = score > 0.7;
-  const knees = atTop && kneeRise < KNEE_RISE_MIN;
+  // Only judge the knees when knees and feet are really inside the picture; otherwise the model just guesses them
+  const legsInFrame = [25, 26, 27, 28].every(i => { const q = P(i); return q.x01 >= 0 && q.x01 <= 1 && q.y01 >= 0 && q.y01 <= 1; });
+  const knees = atTop && legsInFrame && kneeRise < KNEE_RISE_MIN;
+  if (!$("debug").hidden) $("debug").textContent =
+    `ברך ${kneeRise.toFixed(2)} · רגליים ${legsInFrame ? "בפריים" : "מחוץ לפריים"} · ${atTop ? "למעלה" : "למטה"} · מודל ${modelVariant}`;
 
   // Body line, from 3D
   let form = null, legsVisible = true;
@@ -912,6 +917,7 @@ function finish(completed) {
 }
 
 $("freeBtn").addEventListener("click", () => begin("free"));
+document.querySelector(".stage").addEventListener("click", () => { $("debug").hidden = !$("debug").hidden; $("debug").textContent = ""; });
 $("drillBtn").addEventListener("click", () => begin("drill"));
 $("stopBtn").addEventListener("click", () => finish(false));
 </script>
