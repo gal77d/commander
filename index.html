@@ -85,7 +85,6 @@
     <div class="count" id="count"></div>
     <div class="order" id="order"></div>
     <div class="hint" id="hint">בחר אימון</div>
-    <div id="kneeAngle" style="position:absolute;top:8px;left:10px;font-size:13px;color:#fffa;text-shadow:0 1px 4px #000;pointer-events:none"></div>
   </div>
 
   <div id="startBox">
@@ -133,10 +132,6 @@
       <b>להציג שלד על הגוף</b>
       <input type="checkbox" id="skeletonInput" style="width:22px;height:22px">
     </label>
-    <label class="row" style="margin-top:12px">
-      <b>בדיקת ברכיים</b>
-      <input type="checkbox" id="kneeInput" style="width:22px;height:22px">
-    </label>
   </div>
 
   <div class="card">
@@ -158,7 +153,7 @@ const $ = id => document.getElementById(id);
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 // ================= storage (everything stays on the phone) =================
-const APP_VERSION = "2026-10-07d";
+const APP_VERSION = "2026-10-07e";
 (async () => {
   try {
     const html = await (await fetch("index.html?check=" + Date.now(), { cache: "no-store" })).text();
@@ -171,7 +166,7 @@ const APP_VERSION = "2026-10-07d";
 })();
 
 const KEY = "commander_v1";
-let data = { goal: 100, level: 1, best: 0, days: {}, skeleton: true, kneeCheck: true, mode: "day", perRep: 60, unlockUntil: 0 };
+let data = { goal: 100, level: 1, best: 0, days: {}, skeleton: true, mode: "day", perRep: 60, unlockUntil: 0 };
 try { Object.assign(data, JSON.parse(localStorage.getItem(KEY)) || {}); } catch {}
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch {} };
 
@@ -302,8 +297,6 @@ renderMode();
 $("modeInput").addEventListener("change", e => { data.mode = e.target.value; save(); renderMode(); renderStats(); });
 $("perRepInput").addEventListener("input", e => { data.perRep = +e.target.value; save(); renderMode(); renderStats(); });
 
-$("kneeInput").checked = data.kneeCheck;
-$("kneeInput").addEventListener("change", e => { data.kneeCheck = e.target.checked; save(); });
 $("skeletonInput").checked = data.skeleton;
 $("skeletonInput").addEventListener("change", e => { data.skeleton = e.target.checked; save(); });
 
@@ -501,9 +494,8 @@ function readPose(lm, wl) {
   // level with the feet or lower. kneeRise = how much higher the knees are than the ankles, in shoulder widths.
   const knee2 = (P(25).y + P(26).y) / 2, ankle2 = (P(27).y + P(28).y) / 2;
   const kneeRise = (ankle2 - knee2) / shoulderW;
-  $("kneeAngle").textContent = data.kneeCheck ? `ברך ${kneeRise.toFixed(2)}` : "";
   const atTop = score > 0.7;
-  const knees = data.kneeCheck && atTop && kneeRise < KNEE_RISE_MIN;
+  const knees = atTop && kneeRise < KNEE_RISE_MIN;
 
   // Body line, from 3D
   let form = null, legsVisible = true;
