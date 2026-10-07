@@ -158,7 +158,7 @@ const $ = id => document.getElementById(id);
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 // ================= storage (everything stays on the phone) =================
-const APP_VERSION = "2026-10-07b";
+const APP_VERSION = "2026-10-07c";
 (async () => {
   try {
     const html = await (await fetch("index.html?check=" + Date.now(), { cache: "no-store" })).text();
@@ -493,13 +493,13 @@ function readPose(lm, wl) {
   const score = Math.min(liftScore, (1 + angScore) / 2);
 
   // Knees and body line, from 3D
-  let form = null, knees = false;
+  let form = null, knees = false, legsVisible = true;
   if (wl) {
     const sh = mid3(V(11), V(12)), hp = mid3(V(23), V(24)), kn = mid3(V(25), V(26)), an = mid3(V(27), V(28));
     // On the knees: the leg is clearly bent at the knee (a real push-up keeps it straight).
     // Facing the camera the legs are often hidden and only guessed, so skip the check when they aren't visible.
     const kneeAng = angle3(hp, kn, an);
-    const legsVisible = !hasVis || [25, 26, 27, 28].every(i => (lm[i].visibility ?? 1) > 0.5);
+    legsVisible = !hasVis || [25, 26, 27, 28].every(i => (lm[i].visibility ?? 1) > 0.5);
     $("kneeAngle").textContent = data.kneeCheck ? `ברך ${Math.round(kneeAng)}°${legsVisible ? "" : " (לא רואה רגליים)"}` : "";
     knees = data.kneeCheck && legsVisible && kneeAng < 140;
     if (!knees) {
@@ -511,7 +511,7 @@ function readPose(lm, wl) {
       else if (dy < 0 && bend > 30) form = "pike";  // hips above the line
     }
   }
-  return { seen: true, plank: true, score, form, knees };
+  return { seen: true, plank: true, score, form, knees, legsVisible };
 }
 
 // ================= rep tracker (shared by both modes) =================
@@ -748,13 +748,31 @@ const drill = {
 function order(text) { $("order").textContent = text; say(text); }
 function hint(text, bad = false) { $("hint").textContent = text; $("hint").className = bad ? "hint bad" : "hint"; }
 
+// If the accurate model is too slow on this phone (average > 70 ms a frame), switch to the light one
+let speedSamples = [], switching = false;
+function checkSpeed(ms) {
+  if (modelVariant !== "full" || switching) return;
+  speedSamples.push(ms);
+  if (speedSamples.length < 60) return;
+  const avg = speedSamples.reduce((a, b) => a + b) / speedSamples.length;
+  speedSamples = [];
+  if (avg <= 70) { modelVariant = "full-ok"; return; }
+  switching = true;
+  createLandmarker("GPU", "lite").catch(() => createLandmarker("CPU", "lite"))
+    .then(m => { landmarker.close?.(); landmarker = m; modelVariant = "lite"; })
+    .catch(() => {})
+    .finally(() => { switching = false; });
+}
+
 // ================= main loop =================
 function loop() {
   if (!mode) return;
   if (video.currentTime !== lastTime && video.videoWidth) {
     lastTime = video.currentTime;
     if (canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
-    const result = landmarker.detectForVideo(video, performance.now());
+    const t0 = performance.now();
+    const result = landmarker.detectForVideo(video, t0);
+    checkSpeed(performance.now() - t0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const raw = result.landmarks?.[0], rawWorld = result.worldLandmarks?.[0];
     const lm = raw ? smoothLandmarks(raw, performance.now()) : null;
@@ -763,8 +781,11 @@ function loop() {
 
     if (lm && data.skeleton) {
       const color = pose.form ? "#ff5c5c" : "#3ddc84";
-      draw.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, { color, lineWidth: 3 });
-      draw.drawLandmarks(lm, { color: "#fff", radius: 3 });
+      // when the legs are hidden the model only guesses them, so draw just the upper body
+      const showLegs = pose.legsVisible !== false;
+      const links = showLegs ? PoseLandmarker.POSE_CONNECTIONS : PoseLandmarker.POSE_CONNECTIONS.filter(c => c.start < 25 && c.end < 25);
+      draw.drawConnectors(lm, links, { color, lineWidth: 3 });
+      draw.drawLandmarks(showLegs ? lm : lm.slice(0, 25), { color: "#fff", radius: 3 });
     }
 
     const now = performance.now();
@@ -798,12 +819,14 @@ function loop() {
 }
 
 // ================= start / stop =================
-async function createLandmarker(delegate) {
+// "full" is more accurate (better at legs and depth); "lite" is the fallback for slow phones
+let modelVariant = null;
+async function createLandmarker(delegate, variant) {
   const vision = await FilesetResolver.forVisionTasks(
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
   return PoseLandmarker.createFromOptions(vision, {
     baseOptions: {
-      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+      modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_${variant}/float16/1/pose_landmarker_${variant}.task`,
       delegate,
     },
     runningMode: "VIDEO",
@@ -828,8 +851,10 @@ async function begin(m) {
     }
     if (!landmarker) {
       hint("טוען מודל...");
-      try { landmarker = await createLandmarker("GPU"); }
-      catch { landmarker = await createLandmarker("CPU"); }
+      for (const [variant, delegate] of [["full", "GPU"], ["lite", "GPU"], ["lite", "CPU"]]) {
+        try { landmarker = await createLandmarker(delegate, variant); modelVariant = variant; break; } catch {}
+      }
+      if (!landmarker) throw new Error("model");
       draw = new DrawingUtils(ctx);
     }
     try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
