@@ -137,8 +137,9 @@
   <div class="card">
     <b>איך מעמידים את הטלפון</b>
     <ul class="muted">
-      <li>הטלפון על הרצפה, <b>מהצד</b> שלך, בעמידה (נשען על משהו), 2 מטר ממך.</li>
-      <li>צריך לראות את כל הגוף: ראש, ידיים, אגן ורגליים.</li>
+      <li>הטלפון על הרצפה <b>מולך</b>, בעמידה (נשען על משהו), בערך מטר לפני הראש. אתה מסתכל ישר למצלמה.</li>
+      <li>הכי טוב להרים אותו קצת (על ספר או קופסה), כדי שיראה גם את הגב והרגליים מאחוריך – ככה הוא יודע אם אתה על הברכיים.</li>
+      <li>בתחילת כל אימון תחזיק שנייה למעלה עם ידיים ישרות – הוא לומד את הגובה שלך.</li>
       <li>תגביר את הווליום ותוריד את המצב השקט – המפקד מדבר.</li>
     </ul>
   </div>
@@ -370,6 +371,7 @@ const LINES = {
   praise: ["יפה!", "ככה אני אוהב!", "מצוין, חייל!", "טכניקה נקייה!", "תמשיך ככה!"],
   notSeen: ["אני לא רואה אותך! תיכנס לפריים!"],
   notPlank: ["תיכנס לתנוחת שכיבה!"],
+  knees: ["על הברכיים זה לא נספר! על כפות הרגליים!", "בלי ברכיים, חייל! רגליים ישרות!"],
 };
 
 // one correction at a time, and not the same one over and over
@@ -387,30 +389,35 @@ const video = $("video"), canvas = $("canvas"), ctx = canvas.getContext("2d");
 let landmarker, draw, lastTime = -1, armLen = 0;
 
 // One Euro filter: removes the frame-to-frame jitter of the detected points,
-// but follows quickly when you really move.
+// but follows quickly when you really move. One filter for the image points, one for the 3D points.
 const MIN_CUTOFF = 0.8, BETA = 2, D_CUTOFF = 1;
-let filt = null, filtT = 0;
 const alpha = (cutoff, dt) => 1 / (1 + 1 / (2 * Math.PI * cutoff * dt));
-function smoothLandmarks(lm, tMs) {
-  const dt = filt ? Math.max(1 / 120, (tMs - filtT) / 1000) : 0;
-  if (!filt || dt > 0.5) {   // first frame, or the person was lost for a while
-    filt = lm.map(p => ({ x: p.x, y: p.y, dx: 0, dy: 0 }));
+function makeSmoother() {
+  let filt = null, filtT = 0;
+  const fn = (lm, tMs) => {
+    const dt = filt ? Math.max(1 / 120, (tMs - filtT) / 1000) : 0;
     filtT = tMs;
-    return lm;
-  }
-  filtT = tMs;
-  return lm.map((p, i) => {
-    const f = filt[i];
+    if (!filt || dt > 0.5) {   // first frame, or the person was lost for a while
+      filt = lm.map(p => ({ x: p.x, y: p.y, z: p.z ?? 0, dx: 0, dy: 0, dz: 0 }));
+      return lm;
+    }
     const ad = alpha(D_CUTOFF, dt);
-    f.dx = ad * ((p.x - f.x) / dt) + (1 - ad) * f.dx;
-    f.dy = ad * ((p.y - f.y) / dt) + (1 - ad) * f.dy;
-    const speed = Math.hypot(f.dx, f.dy);
-    const a = alpha(MIN_CUTOFF + BETA * speed, dt);
-    f.x = a * p.x + (1 - a) * f.x;
-    f.y = a * p.y + (1 - a) * f.y;
-    return { ...p, x: f.x, y: f.y };
-  });
+    return lm.map((p, i) => {
+      const f = filt[i], z = p.z ?? 0;
+      f.dx = ad * ((p.x - f.x) / dt) + (1 - ad) * f.dx;
+      f.dy = ad * ((p.y - f.y) / dt) + (1 - ad) * f.dy;
+      f.dz = ad * ((z - f.z) / dt) + (1 - ad) * f.dz;
+      const a = alpha(MIN_CUTOFF + BETA * Math.hypot(f.dx, f.dy, f.dz), dt);
+      f.x = a * p.x + (1 - a) * f.x;
+      f.y = a * p.y + (1 - a) * f.y;
+      f.z = a * z + (1 - a) * f.z;
+      return { ...p, x: f.x, y: f.y, z: f.z };
+    });
+  };
+  fn.reset = () => { filt = null; };
+  return fn;
 }
+const smoothLandmarks = makeSmoother(), smoothWorld = makeSmoother();
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const clamp01 = v => Math.max(0, Math.min(1, v));
@@ -419,58 +426,89 @@ function angle(a, b, c) {
   let deg = Math.abs((ab - cb) * 180 / Math.PI);
   return deg > 180 ? 360 - deg : deg;
 }
+// 3D helpers (MediaPipe world landmarks: meters, y points down)
+const sub3 = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+const len3 = v => Math.hypot(v.x, v.y, v.z);
+const mid3 = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 });
+function angle3(a, b, c) {
+  const u = sub3(a, b), v = sub3(c, b);
+  const cos = (u.x * v.x + u.y * v.y + u.z * v.z) / (len3(u) * len3(v) || 1);
+  return Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+}
 
-// Reads one frame. Returns { seen, plank, score (1 = arms straight, 0 = chest down), form: null|"sag"|"pike" }
-function readPose(lm) {
+// Height of the shoulders above the hands at the top of a push-up; learned from you while you train.
+let topLift = 0;
+
+// Reads one frame. The phone is on the floor in front of you and you face it.
+// lm = image points (0..1), wl = 3D world points. Returns
+// { seen, plank, score (1 = arms straight, 0 = chest down), form: null|"sag"|"pike", knees }
+function readPose(lm, wl) {
   const W = video.videoWidth, H = video.videoHeight;
   const hasVis = lm.some(p => (p.visibility ?? 0) > 0.01);
   const P = i => ({ x: lm[i].x * W, y: lm[i].y * H, x01: lm[i].x, y01: lm[i].y, v: hasVis ? lm[i].visibility : 1 });
   const ok = p => p.x01 > -0.05 && p.x01 < 1.05 && p.y01 > -0.05 && p.y01 < 1.05 && p.v > 0.3;
+  const V = i => wl[i];
 
-  // shoulder, elbow, wrist, hip, knee, ankle
-  const sides = [[11, 13, 15, 23, 25, 27], [12, 14, 16, 24, 26, 28]]
-    .map(ids => { const [s, e, w, h, k, a] = ids.map(P); return { s, e, w, h, k, a }; });
+  // shoulder, elbow, wrist
+  const sides = [[11, 13, 15], [12, 14, 16]].map(ids => { const [s, e, w] = ids.map(P); return { ids, s, e, w }; });
   const arms = sides.filter(x => ok(x.s) && ok(x.e) && ok(x.w));
-  if (!arms.length) return { seen: false };
+  if (!arms.length || !ok(sides[0].s) || !ok(sides[1].s)) return { seen: false };
 
-  // Must be lying down: torso more horizontal than vertical
-  const torso = sides.find(x => ok(x.s) && ok(x.h));
-  if (torso && Math.abs(torso.s.y - torso.h.y) > Math.abs(torso.s.x - torso.h.x)) return { seen: true, plank: false };
+  // Must be lying down: in 3D the torso (shoulders -> hips) is more horizontal than vertical
+  if (wl) {
+    const torso = sub3(mid3(V(23), V(24)), mid3(V(11), V(12)));
+    if (Math.abs(torso.y) > 0.7 * len3(torso)) return { seen: true, plank: false };
+  }
 
-  const ang = arms.reduce((t, a) => t + angle(a.s, a.e, a.w), 0) / arms.length;
-  const len = arms.reduce((m, a) => Math.max(m, dist(a.s, a.e) + dist(a.e, a.w)), 0);
-  armLen = Math.max(len, armLen * 0.995);
-  const lift = arms.reduce((t, a) => t + (a.w.y - a.s.y), 0) / arms.length;
-  const score = (clamp01((ang - 70) / 100) + clamp01(lift / (armLen * 0.85))) / 2;
+  // Elbow angle (3D, so it works when you face the camera): only used to check the arms lock out at the top
+  const ang = arms.reduce((t, a) => t + (wl ? angle3(V(a.ids[0]), V(a.ids[1]), V(a.ids[2])) : angle(a.s, a.e, a.w)), 0) / arms.length;
+  const angScore = clamp01((ang - 70) / 100);
 
-  // Body line: shoulder - hip - ankle (or knee) should be straight
-  let form = null;
-  const leg = sides.find(x => ok(x.s) && ok(x.h) && (ok(x.a) || ok(x.k)));
-  if (leg) {
-    const s = leg.s, h = leg.h, f = ok(leg.a) ? leg.a : leg.k;
-    const bend = 180 - angle(s, h, f);
-    if (Math.abs(f.x - s.x) > 1) {
-      const lineY = s.y + (f.y - s.y) * (h.x - s.x) / (f.x - s.x);
-      if (h.y > lineY && bend > 25) form = "sag";        // hips below the line (image y grows downward)
-      else if (h.y < lineY && bend > 30) form = "pike";  // hips above the line
+  // Depth: how high the shoulders are above the hands, in shoulder widths (so moving closer doesn't matter),
+  // compared to your own top position. Chest near the floor ~0.3 of the top, a half push-up ~0.65.
+  const shoulderW = dist(sides[0].s, sides[1].s) || 1;
+  const lift = arms.reduce((t, a) => t + (a.w.y - a.s.y), 0) / arms.length / shoulderW;
+  topLift = Math.max(lift, topLift * 0.9995);
+  const liftScore = topLift > 0 ? clamp01((lift / topLift - 0.15) / 0.85) : 1;
+
+  const score = Math.min(liftScore, (1 + angScore) / 2);
+
+  // Knees and body line, from 3D
+  let form = null, knees = false;
+  if (wl) {
+    const sh = mid3(V(11), V(12)), hp = mid3(V(23), V(24)), kn = mid3(V(25), V(26)), an = mid3(V(27), V(28));
+    // On the knees: the leg is bent at the knee (a real push-up keeps it straight)
+    knees = angle3(hp, kn, an) < 150;
+    if (!knees) {
+      // hips should sit on the straight line shoulders -> ankles
+      const line = sub3(an, sh), t = ((hp.x - sh.x) * line.x + (hp.y - sh.y) * line.y + (hp.z - sh.z) * line.z) / (len3(line) ** 2 || 1);
+      const dy = hp.y - (sh.y + t * line.y);
+      const bend = 180 - angle3(sh, hp, an);
+      if (dy > 0 && bend > 25) form = "sag";        // hips below the line (y points down)
+      else if (dy < 0 && bend > 30) form = "pike";  // hips above the line
     }
   }
-  return { seen: true, plank: true, score, form };
+  return { seen: true, plank: true, score, form, knees };
 }
 
 // ================= rep tracker (shared by both modes) =================
 // Emits: onRep({clean, fast}), onShallow(), onNoLockout()
 const tracker = {
   phase: "wait", smooth: null, minUp: 1, maxDown: 0, risen: false, topAt: 0, formFrames: 0, dirty: false,
-  reset() { Object.assign(this, { phase: "wait", smooth: null, minUp: 1, maxDown: 0, risen: false, formFrames: 0, dirty: false }); },
+  kneeFrames: 0, onKnees: false,
+  reset() { Object.assign(this, { phase: "wait", smooth: null, minUp: 1, maxDown: 0, risen: false, formFrames: 0, dirty: false, kneeFrames: 0, onKnees: false }); },
   update(pose, ev) {
-    if (!pose.plank) { this.formFrames = 0; return; }
+    if (!pose.plank) { this.formFrames = 0; this.kneeFrames = 0; return; }
     this.smooth = this.smooth == null ? pose.score : this.smooth * 0.5 + pose.score * 0.5;
     const v = this.smooth, now = performance.now();
 
     // form must be wrong for ~1/2 second before we yell
     this.formFrames = pose.form ? this.formFrames + 1 : 0;
     if (this.formFrames > 14 && this.phase !== "wait") { this.dirty = true; ev.onForm?.(pose.form); }
+
+    // on the knees for ~1/3 second during a rep -> that rep doesn't count
+    this.kneeFrames = pose.knees ? this.kneeFrames + 1 : 0;
+    if (this.kneeFrames > 8) this.onKnees = true;
 
     if (this.phase === "wait") {
       if (v > UP) { this.phase = "up"; this.topAt = now; this.minUp = 1; }
@@ -484,8 +522,9 @@ const tracker = {
       if (this.risen && v < DOWN) { ev.onNoLockout?.(); this.risen = false; }
       if (v > UP) {
         const fast = now - this.topAt < 500;
-        ev.onRep?.({ clean: !this.dirty && !fast, fast });
-        this.phase = "up"; this.topAt = now; this.minUp = 1; this.dirty = false;
+        if (this.onKnees) ev.onKnees?.();
+        else ev.onRep?.({ clean: !this.dirty && !fast, fast });
+        this.phase = "up"; this.topAt = now; this.minUp = 1; this.dirty = false; this.onKnees = this.kneeFrames > 8;
       }
     }
   },
@@ -536,6 +575,7 @@ const freeEvents = {
   },
   onShallow: () => correct("shallow"),
   onNoLockout: () => correct("lockout"),
+  onKnees: () => correct("knees"),
   onForm: f => correct(f),
 };
 
@@ -623,6 +663,7 @@ const drill = {
         },
         onShallow: () => correct("shallow"),
         onNoLockout: () => correct("lockout"),
+        onKnees: () => correct("knees"),
         onForm: f => correct(f),
       });
       const idleFrom = Math.max(this.t0, lastRepAt);
@@ -650,6 +691,7 @@ const drill = {
         else if (now > c.at) { c.want = "up"; c.at = now + 3500; say("למעלה!"); hint("למעלה!"); }
       } else if (c.want === "up") {
         if (v > UP) {
+          if (tracker.kneeFrames > 8) { correct("knees"); c.want = "ready"; c.at = now + 1500; return; }
           this.done++; addRep(!tracker.dirty); tracker.dirty = false;
           $("count").textContent = this.done;
           if (this.done >= s.n) { say(pick(LINES.praise)); this.step = null; setTimeout(() => mode === "drill" && this.next(), 1500); }
@@ -660,7 +702,7 @@ const drill = {
     }
 
     // holds: holdDown = chest low, holdUp = straight arms with a straight body
-    const holding = s.type === "holdDown" ? v < 0.55 : v > UP && !pose.form;
+    const holding = s.type === "holdDown" ? v < 0.55 && !pose.knees : v > UP && !pose.form && !pose.knees;
     const dt = this.lastFrame ? Math.min(0.2, (now - this.lastFrame) / 1000) : 0;
     this.lastFrame = now;
     if (holding) {
@@ -691,9 +733,10 @@ function loop() {
     if (canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
     const result = landmarker.detectForVideo(video, performance.now());
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const raw = result.landmarks?.[0];
+    const raw = result.landmarks?.[0], rawWorld = result.worldLandmarks?.[0];
     const lm = raw ? smoothLandmarks(raw, performance.now()) : null;
-    const pose = lm ? readPose(lm) : { seen: false };
+    const wl = rawWorld ? smoothWorld(rawWorld, performance.now()) : null;
+    const pose = lm ? readPose(lm, wl) : { seen: false };
 
     if (lm && data.skeleton) {
       const color = pose.form ? "#ff5c5c" : "#3ddc84";
@@ -708,7 +751,8 @@ function loop() {
       if (now - lostSince > 4000) correct("notSeen");
     } else {
       lostSince = 0;
-      if (!pose.plank) hint("תיכנס לתנוחת שכיבה (הטלפון מהצד)", true);
+      if (!pose.plank) hint("תיכנס לתנוחת שכיבה (הטלפון מולך)", true);
+      else if (pose.knees) hint("על הברכיים לא נספר!", true);
       else if (pose.form === "sag") hint("האגן נופל!", true);
       else if (pose.form === "pike") hint("האגן גבוה מדי!", true);
       else if (mode === "free") hint(tracker.phase === "wait" ? "ישר ידיים כדי להתחיל" : tracker.phase === "down" ? "למעלה!" : "למטה");
@@ -775,6 +819,7 @@ async function begin(m) {
 
   mode = m;
   setReps = sessReps = sessClean = cleanRun = 0;
+  topLift = 0; smoothLandmarks.reset(); smoothWorld.reset();
   inPlankAt = phaseAt = performance.now();
   lastRepAt = performance.now();
   goalAnnounced = todayRec().reps >= data.goal;
