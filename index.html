@@ -239,7 +239,12 @@ const fmtTime = sec => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "
 const hhmm = ms => new Date(ms).toTimeString().slice(0, 5);
 // Time already used today, in seconds. Older saves counted used push-ups in t.spent instead.
 const spentSec = t => t.spentSec ?? (t.spent || 0) * data.perRep;
-const bankSec = t => Math.max(0, t.reps * data.perRep - spentSec(t));
+// Earned time carries over from day to day (it doesn't reset at midnight). Days before this date
+// aren't counted, so old push-ups from before the change don't suddenly become hours of time.
+const BANK_FROM = "2026-10-09";
+const bankSec = () => Math.max(0, Object.entries(data.days)
+  .filter(([k]) => k >= BANK_FROM)
+  .reduce((sum, [, r]) => sum + r.reps * data.perRep - spentSec(r), 0));
 
 // How much of the earned time to open now (the rest stays saved). null = all of it.
 let spendSel = null;
@@ -250,7 +255,7 @@ function renderUnlock(t) {
   const isOpen = data.unlockUntil > Date.now();
   const open = isOpen ? `פתוח עד ${hhmm(data.unlockUntil)}` : "";
   $("lockBtn").hidden = !isOpen;
-  const bank = bankSec(t), spend = spendOf(bank), min = Math.min(30, bank);
+  const bank = bankSec(), spend = spendOf(bank), min = Math.min(30, bank);
   btn.hidden = bank === 0;
   btn.textContent = `🔓 פתח ל-${fmtTime(spend)} דקות`;
   $("spendBox").hidden = bank <= min;
@@ -265,7 +270,7 @@ function renderUnlock(t) {
 }
 
 $("spendInput").addEventListener("input", e => {
-  const bank = bankSec(todayRec());
+  const bank = bankSec();
   spendSel = +e.target.value >= bank ? null : +e.target.value;
   renderUnlock(todayRec());
 });
@@ -273,7 +278,7 @@ $("spendInput").addEventListener("input", e => {
 $("unlockBtn").addEventListener("click", e => {
   e.preventDefault();
   const t = todayRec();
-  const bank = bankSec(t), spend = spendOf(bank);
+  const bank = bankSec(), spend = spendOf(bank);
   if (!spend) return;
   // earned time extends an earlier time unlock, never an old full-day one
   const prev = data.unlockKind === "time" ? data.unlockUntil || 0 : 0;
