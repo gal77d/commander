@@ -471,8 +471,6 @@ function angle3(a, b, c) {
 
 // Below this "knee rise" (see readPose) you're counted as on your knees
 const KNEE_RISE_MIN = 0.05;
-// Phone on the floor in front: knees seen this clearly (while the feet aren't) = on the knees
-const KNEE_VIS_FRONT = 0.45;
 
 // Height of the shoulders above the hands at the top of a push-up; learned from you while you train.
 // It's the 90th percentile of the last ~10 seconds, so one weird frame (moving the phone, coming close)
@@ -532,15 +530,9 @@ function readPose(lm, wl) {
   const legsInFrame = [25, 26, 27, 28].every(i => { const q = P(i); return q.x01 >= 0 && q.x01 <= 1 && q.y01 >= 0 && q.y01 <= 1; });
   const seenWell = ids => hasVis && ids.every(i => lm[i].visibility >= 0.5);
   const legsSeen = legsInFrame && seenWell([25, 26, 27, 28]);
-  // Phone on the floor in front (feet hidden): on the toes the knees are hidden behind the body too
-  // (model visibility <= 0.34 in two real videos), on the knees they come forward and the model sees them
-  // (0.5-0.9). Tested on one video: 2 of 194 frames flagged on the toes, most frames flagged on the knees;
-  // a rep only counts as "knees" when most of its top frames are flagged (tracker.kneeRep).
-  const kneeVis = hasVis ? (lm[25].visibility + lm[26].visibility) / 2 : 0;
-  const kneesFront = !legsSeen && kneeVis >= KNEE_VIS_FRONT;
-  const knees = atTop && ((legsSeen && kneeRise < KNEE_RISE_MIN) || kneesFront);
+  const knees = atTop && legsSeen && kneeRise < KNEE_RISE_MIN;
   if (!$("debug").hidden) $("debug").textContent =
-    `ברך ${kneeRise.toFixed(2)} · נראות ברך ${kneeVis.toFixed(2)} · רגליים ${legsSeen ? "נראות" : legsInFrame ? "מוסתרות" : "מחוץ לפריים"} · ${atTop ? "למעלה" : "למטה"} · מודל ${modelVariant}`;
+    `ברך ${kneeRise.toFixed(2)} · רגליים ${legsSeen ? "נראות" : legsInFrame ? "מוסתרות" : "מחוץ לפריים"} · ${atTop ? "למעלה" : "למטה"} · מודל ${modelVariant}`;
 
   // Body line, from 3D – only when hips and feet are really seen (same reason as the knees)
   let form = null, legsVisible = legsSeen;
