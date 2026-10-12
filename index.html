@@ -119,7 +119,7 @@
     <b>How to place the phone</b>
     <ul class="muted">
       <li>Phone on the floor <b>in front of you</b>, standing up (leaning on something), about 1 m in front of your head. Look straight at the camera.</li>
-      <li>Best: raise it a little (on a book or a box) so it also sees your back and legs – that's how it knows if you're on your knees.</li>
+      <li>It must see your legs behind you (between your arms) – that's how it knows if you're on your knees. Knee push-ups don't count.</li>
       <li>Your shoulders, elbows and hands must stay in the picture the whole time.</li>
       <li>At the start, hold the top position with straight arms for a second – it learns your height.</li>
     </ul>
@@ -133,7 +133,7 @@ import { PoseLandmarker, FilesetResolver, DrawingUtils }
 const $ = id => document.getElementById(id);
 
 // ================= storage (everything stays on the phone) =================
-const APP_VERSION = "2026-10-12a";
+const APP_VERSION = "2026-10-12b";
 (async () => {
   try {
     const html = await (await fetch("index.html?check=" + Date.now(), { cache: "no-store" })).text();
@@ -363,6 +363,12 @@ function angle3(a, b, c) {
 
 // Below this "knee rise" (see readPose) you're counted as on your knees
 const KNEE_RISE_MIN = 0.05;
+// On the knees the legs are folded: with the phone low on the floor in front, the 3D knee angle
+// (hip-knee-ankle) and hip angle (shoulder-hip-knee) at the top of the rep are much smaller.
+// Measured at the top of real reps: on the toes knee >= 153°, hip >= 172° (10th percentile);
+// on the knees knee <= 117°, hip <= 138° (90th percentile). Rule: knee < 135° AND hip < 150°.
+// On 6 test clips: 0–5% of toe frames flagged, 93–100% of knee frames (when the legs are in view).
+const KNEE_FOLD_MAX = 135, HIP_FOLD_MAX = 150;
 
 // Height of the shoulders above the hands at the top of a push-up; learned from you while you train.
 // It's the 90th percentile of the last ~10 seconds, so one weird frame can't set an impossible "top".
@@ -426,9 +432,15 @@ function readPose(lm, wl) {
   const legsInFrame = [25, 26, 27, 28].every(i => { const q = P(i); return q.x01 >= 0 && q.x01 <= 1 && q.y01 >= 0 && q.y01 <= 1; });
   const seenWell = ids => hasVis && ids.every(i => lm[i].visibility >= 0.5);
   const legsSeen = legsInFrame && seenWell([25, 26, 27, 28]);
-  const knees = atTop && legsSeen && kneeRise < KNEE_RISE_MIN;
+  let kneeAng = 180, hipAng = 180;
+  if (wl) {
+    kneeAng = (angle3(V(23), V(25), V(27)) + angle3(V(24), V(26), V(28))) / 2;
+    hipAng = (angle3(V(11), V(23), V(25)) + angle3(V(12), V(24), V(26))) / 2;
+  }
+  const legsFolded = kneeAng < KNEE_FOLD_MAX && hipAng < HIP_FOLD_MAX;
+  const knees = atTop && ((legsSeen && kneeRise < KNEE_RISE_MIN) || legsFolded);
   if (!$("debug").hidden) $("debug").textContent =
-    `elbow ${elbow.toFixed(0)}° · depth ${(score * 100).toFixed(0)}% · legs ${legsSeen ? "seen" : legsInFrame ? "hidden" : "out of frame"} · model ${modelVariant}`;
+    `elbow ${elbow.toFixed(0)}° · knee ${kneeAng.toFixed(0)}° · hip ${hipAng.toFixed(0)}° · depth ${(score * 100).toFixed(0)}% · model ${modelVariant}`;
 
   // Body line, from 3D – only when hips and feet are really seen (same reason as the knees)
   let form = null;
@@ -441,7 +453,8 @@ function readPose(lm, wl) {
     if (dy > 0 && bend > 25) form = "sag";        // hips below the line (y points down)
     else if (dy < 0 && bend > 30) form = "pike";  // hips above the line
   }
-  return { seen: true, plank: true, score, elbow, form, knees, atTop, legsVisible: legsSeen };
+  const kneesVisible = hasVis && (lm[25].visibility + lm[26].visibility) / 2 >= 0.5;
+  return { seen: true, plank: true, score, elbow, form, knees, atTop, legsVisible: legsSeen, kneesVisible };
 }
 
 // ================= rep tracker =================
@@ -455,7 +468,9 @@ const tracker = {
   },
   // most of this rep's top frames looked like knees on the floor
   kneeRep() { return this.topFrames >= 4 && this.kneeTopFrames > this.topFrames / 2; },
-  startCycle(now) { this.cycleStart = now; this.minElbow = 180; this.dirty = false; this.topFrames = this.kneeTopFrames = 0; },
+  startCycle(now) { this.cycleStart = now; this.minElbow = 180; },
+  // after a rep: also forget the top frames, form and knee counts of the rep that just ended
+  newRep(now) { this.startCycle(now); this.dirty = false; this.topFrames = this.kneeTopFrames = 0; },
   update(pose, ev) {
     const now = performance.now();
     // Out of push-up position: whatever was going on doesn't count, start over
@@ -473,7 +488,7 @@ const tracker = {
       // arms straight and steady for a moment before counting starts
       if (v > UP && pose.elbow >= ELBOW_TOP_MIN) {
         this.readySince ||= now;
-        if (now - this.readySince >= READY_MS) { this.phase = "up"; this.startCycle(now); }
+        if (now - this.readySince >= READY_MS) { this.phase = "up"; this.newRep(now); }
       } else this.readySince = 0;
     } else if (this.phase === "up") {
       if (v < DOWN) this.phase = "down";
@@ -486,7 +501,7 @@ const tracker = {
         else if (this.kneeRep()) reason = "knees";
         if (reason) ev.onReject?.(reason);
         else ev.onRep?.({ clean: !this.dirty });
-        this.phase = "up"; this.startCycle(now);
+        this.phase = "up"; this.newRep(now);
       }
     }
   },
@@ -561,11 +576,11 @@ function loop() {
 
     if (lm && data.skeleton) {
       const color = pose.form ? "#ff5c5c" : "#3ddc84";
-      // when the legs are hidden the model only guesses them, so draw just the upper body
-      const showLegs = !!pose.legsVisible;
-      const links = showLegs ? PoseLandmarker.POSE_CONNECTIONS : PoseLandmarker.POSE_CONNECTIONS.filter(c => c.start < 25 && c.end < 25);
-      draw.drawConnectors(lm, links, { color, lineWidth: 3 });
-      draw.drawLandmarks(showLegs ? lm : lm.slice(0, 25), { color: "#fff", radius: 3 });
+      // draw only what the model really sees: whole body, down to the knees, or just the upper body
+      const upTo = pose.legsVisible ? 33 : pose.kneesVisible ? 27 : 25;
+      const links = PoseLandmarker.POSE_CONNECTIONS.filter(c => c.start < upTo && c.end < upTo);
+      draw.drawConnectors(lm, links, { color: pose.knees ? "#ff5c5c" : color, lineWidth: 3 });
+      draw.drawLandmarks(lm.slice(0, upTo), { color: "#fff", radius: 3 });
     }
 
     const now = performance.now();
