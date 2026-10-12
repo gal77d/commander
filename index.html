@@ -133,7 +133,7 @@ import { PoseLandmarker, FilesetResolver, DrawingUtils }
 const $ = id => document.getElementById(id);
 
 // ================= storage (everything stays on the phone) =================
-const APP_VERSION = "2026-10-12d";
+const APP_VERSION = "2026-10-12e";
 (async () => {
   try {
     const html = await (await fetch("index.html?check=" + Date.now(), { cache: "no-store" })).text();
@@ -459,24 +459,28 @@ function readPose(lm, wl) {
 
 // ================= rep tracker =================
 // Emits: onRep({clean}), onReject(reason)
-// Knees are judged at the START of every push-up: only the frames at the top, before you go down.
-// While going down and coming back up the knees aren't checked, so bad frames there can't reject a
-// real push-up. If the top was too short to judge, the previous push-up's answer is used.
+// Knees are judged at the START of every push-up: only the LAST few frames at the top, right before
+// you go down. While going down and coming back up the knees aren't checked, so bad frames there can't
+// reject a real push-up. Only the last frames count, so switching from knees to toes at the top works:
+// the push-up right after the switch is judged by how you are when you start it.
+const KNEE_WINDOW = 8;   // ~0.25 s of frames (6 let 1 of 10 knee push-ups through in testing; 8–12 caught all)
 const tracker = {
   phase: "wait", smooth: null, readySince: 0, cycleStart: 0, minElbow: 180,
-  formFrames: 0, dirty: false, topFrames: 0, kneeTopFrames: 0, repKnees: false, lastKnees: false,
+  formFrames: 0, dirty: false, topFlags: [], repKnees: false, lastKnees: false,
   reset() {
     Object.assign(this, { phase: "wait", smooth: null, readySince: 0, cycleStart: 0, minElbow: 180,
-      formFrames: 0, dirty: false, topFrames: 0, kneeTopFrames: 0, repKnees: false, lastKnees: false });
+      formFrames: 0, dirty: false, topFlags: [], repKnees: false, lastKnees: false });
   },
-  // decided when you start going down: did most of the top frames look like knees on the floor?
+  // decided when you start going down: did most of the last top frames look like knees on the floor?
+  // With no top frame at all (super quick), the previous push-up's answer is used.
   judgeKnees() {
-    if (this.topFrames >= 3) this.lastKnees = this.kneeTopFrames > this.topFrames / 2;
+    const f = this.topFlags;
+    if (f.length) this.lastKnees = f.filter(Boolean).length > f.length / 2;
     this.repKnees = this.lastKnees;
   },
   startCycle(now) { this.cycleStart = now; this.minElbow = 180; },
   // after a rep: also forget the top frames and form of the rep that just ended
-  newRep(now) { this.startCycle(now); this.dirty = false; this.topFrames = this.kneeTopFrames = 0; },
+  newRep(now) { this.startCycle(now); this.dirty = false; this.topFlags = []; },
   update(pose, ev) {
     const now = performance.now();
     // Out of push-up position: whatever was going on doesn't count, start over
@@ -488,7 +492,10 @@ const tracker = {
     this.formFrames = pose.form ? this.formFrames + 1 : 0;
     if (this.formFrames > 14 && this.phase !== "wait") this.dirty = true;   // bad form for ~1/2 second
     // top frames before going down (waiting, or at the top between push-ups)
-    if (pose.atTop && this.phase !== "down") { this.topFrames++; if (pose.knees) this.kneeTopFrames++; }
+    if (pose.atTop && this.phase !== "down") {
+      this.topFlags.push(!!pose.knees);
+      if (this.topFlags.length > KNEE_WINDOW) this.topFlags.shift();
+    }
     this.minElbow = Math.min(this.minElbow, pose.elbow);
 
     if (this.phase === "wait") {
