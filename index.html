@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="he" dir="rtl">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="המפקד">
+<meta name="apple-mobile-web-app-title" content="Commander">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
-<title>המפקד</title>
+<title>Commander</title>
 <style>
   :root { --bg:#0f1115; --fg:#f2f2f2; --muted:#8a8f98; --accent:#3ddc84; --bad:#ff5c5c; --warn:#ffb347;
           --card:#1a1d24; --cell:#2a2e37; }
@@ -28,18 +28,11 @@
   .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
   .big { font-size:32px; font-weight:700; font-variant-numeric:tabular-nums; }
   .muted { color:var(--muted); font-size:14px; }
-  .ok { color:var(--accent); } .bad { color:var(--bad); }
   .bar { height:12px; background:var(--cell); border-radius:6px; overflow:hidden; margin-top:10px; }
   .bar > div { height:100%; width:0; background:var(--accent); transition:width .3s; }
   button { width:100%; padding:16px; font-size:19px; font-weight:700; border:0; border-radius:14px;
            background:var(--accent); color:#000; font-family:inherit; }
-  button.alt { background:var(--warn); }
   button.stop { background:var(--bad); color:#fff; }
-  button:disabled { opacity:.5; }
-  .btns { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-  .levels { display:flex; gap:6px; margin-top:8px; }
-  .levels button { padding:10px 4px; font-size:15px; background:var(--cell); color:var(--fg); }
-  .levels button.on { background:var(--warn); color:#000; }
   input[type=number] { width:90px; padding:8px; font-size:18px; border-radius:10px; border:1px solid #333;
                        background:var(--cell); color:var(--fg); text-align:center; }
   .cal { display:grid; grid-template-columns:repeat(7, 1fr); gap:5px; margin-top:10px; }
@@ -60,26 +53,26 @@
 <body>
 <main>
   <div class="row">
-    <h1>🪖 המפקד</h1>
+    <h1>🪖 Commander</h1>
     <div id="streak" class="muted"></div>
   </div>
 
   <div class="card">
     <div class="row">
       <div>
-        <div class="muted">היום</div>
+        <div class="muted">Today</div>
         <div class="big"><span id="today">0</span> / <span id="goalShow">100</span></div>
       </div>
       <div id="todayIcon" class="big">⏳</div>
     </div>
     <div class="bar"><div id="barFill"></div></div>
-    <!-- runs the iPhone shortcut that marks today as done, so the app-lock automation lets apps open -->
+    <!-- runs the iPhone shortcut "Commander Done", which tells the app-lock automation until when apps may open -->
     <div id="spendBox" style="margin-top:12px" hidden>
-      <div class="row"><span>כמה זמן לפתוח</span><b id="spendLabel"></b></div>
+      <div class="row"><span>How much time to open</span><b id="spendLabel"></b></div>
       <input type="range" id="spendInput" step="5" style="width:100%">
     </div>
     <a id="unlockBtn" class="unlock" href="#" hidden></a>
-    <a id="lockBtn" class="unlock" href="#" style="background:var(--cell);color:var(--fg)" hidden>🔒 נעל עכשיו</a>
+    <a id="lockBtn" class="unlock" href="#" style="background:var(--cell);color:var(--fg)" hidden>🔒 Lock now</a>
     <div id="unlockInfo" class="muted" style="margin-top:8px"></div>
   </div>
 
@@ -88,57 +81,47 @@
     <canvas id="canvas"></canvas>
     <div class="count" id="count"></div>
     <div class="order" id="order"></div>
-    <div class="hint" id="hint">בחר אימון</div>
-    <div id="debug" hidden style="position:absolute;top:8px;left:10px;font-size:13px;color:#fffc;text-shadow:0 1px 4px #000;pointer-events:none;direction:rtl"></div>
+    <div class="hint" id="hint">Tap Start</div>
+    <div id="debug" hidden style="position:absolute;top:8px;left:10px;font-size:13px;color:#fffc;text-shadow:0 1px 4px #000;pointer-events:none"></div>
   </div>
 
-  <div id="startBox">
-    <div class="btns">
-      <button id="freeBtn">💪 אימון חופשי</button>
-      <button id="drillBtn" class="alt">🪖 המפקד נותן פקודות</button>
-    </div>
-    <div class="levels" id="levels">
-      <button data-l="1">טירון</button>
-      <button data-l="2">לוחם</button>
-      <button data-l="3">קומנדו</button>
-    </div>
-  </div>
-  <button id="stopBtn" class="stop" hidden>⏹ סיום אימון</button>
+  <button id="startBtn">💪 Start workout</button>
+  <button id="stopBtn" class="stop" hidden>⏹ Finish workout</button>
 
   <div class="card" id="summary" hidden></div>
 
   <div class="card">
-    <div class="row"><b>החודש האחרון</b><span class="muted">🟩 עמדת ביעד · 🟧 חלקי</span></div>
+    <div class="row"><b>Last month</b><span class="muted">🟩 goal met · 🟧 partial</span></div>
     <div class="cal" id="cal"></div>
     <div class="stats">
-      <div><b id="stTotal">0</b><span class="muted">סה"כ שכיבות</span></div>
-      <div><b id="stBest">0</b><span class="muted">שיא בסט אחד</span></div>
-      <div><b id="stClean">-</b><span class="muted">טכניקה נקייה</span></div>
+      <div><b id="stTotal">0</b><span class="muted">Total push-ups</span></div>
+      <div><b id="stBest">0</b><span class="muted">Best set</span></div>
+      <div><b id="stClean">-</b><span class="muted">Clean form</span></div>
     </div>
   </div>
 
   <div class="card">
     <div class="row">
-      <b>יעד יומי</b>
+      <b>Daily goal</b>
       <input type="number" id="goalInput" min="5" max="1000" step="5">
     </div>
     <div id="perRepBox" style="margin-top:12px">
-      <div class="row"><span>כל שכיבה שווה</span><b id="perRepLabel"></b></div>
+      <div class="row"><span>Each push-up is worth</span><b id="perRepLabel"></b></div>
       <input type="range" id="perRepInput" min="30" max="60" step="5" style="width:100%">
     </div>
     <label class="row" style="margin-top:12px">
-      <b>להציג שלד על הגוף</b>
+      <b>Show skeleton</b>
       <input type="checkbox" id="skeletonInput" style="width:22px;height:22px">
     </label>
   </div>
 
   <div class="card">
-    <b>איך מעמידים את הטלפון</b>
+    <b>How to place the phone</b>
     <ul class="muted">
-      <li>הטלפון על הרצפה <b>מולך</b>, בעמידה (נשען על משהו), בערך מטר לפני הראש. אתה מסתכל ישר למצלמה.</li>
-      <li>הכי טוב להרים אותו קצת (על ספר או קופסה), כדי שיראה גם את הגב והרגליים מאחוריך – ככה הוא יודע אם אתה על הברכיים.</li>
-      <li>בתחילת כל אימון תחזיק שנייה למעלה עם ידיים ישרות – הוא לומד את הגובה שלך.</li>
-      <li>תגביר את הווליום ותוריד את המצב השקט – המפקד מדבר.</li>
+      <li>Phone on the floor <b>in front of you</b>, standing up (leaning on something), about 1 m in front of your head. Look straight at the camera.</li>
+      <li>Best: raise it a little (on a book or a box) so it also sees your back and legs – that's how it knows if you're on your knees.</li>
+      <li>Your shoulders, elbows and hands must stay in the picture the whole time.</li>
+      <li>At the start, hold the top position with straight arms for a second – it learns your height.</li>
     </ul>
   </div>
 </main>
@@ -148,10 +131,9 @@ import { PoseLandmarker, FilesetResolver, DrawingUtils }
   from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 
 const $ = id => document.getElementById(id);
-const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 // ================= storage (everything stays on the phone) =================
-const APP_VERSION = "2026-10-07h";
+const APP_VERSION = "2026-10-12a";
 (async () => {
   try {
     const html = await (await fetch("index.html?check=" + Date.now(), { cache: "no-store" })).text();
@@ -164,9 +146,10 @@ const APP_VERSION = "2026-10-07h";
 })();
 
 const KEY = "commander_v1";
-let data = { goal: 100, level: 1, best: 0, days: {}, skeleton: true, perRep: 60, unlockUntil: 0 };
+let data = { goal: 100, best: 0, days: {}, skeleton: true, perRep: 60, unlockUntil: 0 };
 try { Object.assign(data, JSON.parse(localStorage.getItem(KEY)) || {}); } catch {}
-delete data.mode;   // the "whole day after the goal" option was removed; apps open only for earned time
+delete data.mode;    // the "whole day after the goal" option was removed; apps open only for earned time
+delete data.level;   // the drill mode (and its levels) was removed
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch {} };
 
 const dayKey = (d = new Date()) =>
@@ -193,9 +176,9 @@ function renderStats() {
   $("goalShow").textContent = data.goal;
   $("barFill").style.width = Math.min(100, t.reps / data.goal * 100) + "%";
   $("todayIcon").textContent = t.reps >= data.goal ? "✅" : "⏳";
-  renderUnlock(t);
+  renderUnlock();
   const s = streak();
-  $("streak").textContent = s ? `🔥 ${s} ימים ברצף` : "";
+  $("streak").textContent = s ? `🔥 ${s}-day streak` : "";
 
   let total = 0, clean = 0;
   for (const r of Object.values(data.days)) { total += r.reps; clean += r.clean; }
@@ -205,7 +188,7 @@ function renderStats() {
 
   const cal = $("cal");
   cal.innerHTML = "";
-  for (const h of ["א", "ב", "ג", "ד", "ה", "ו", "ש"]) {
+  for (const h of ["S", "M", "T", "W", "T", "F", "S"]) {
     const e = document.createElement("div"); e.className = "head"; e.textContent = h; cal.append(e);
   }
   const start = new Date(); start.setDate(start.getDate() - 34 - start.getDay());
@@ -237,7 +220,7 @@ const isoLocal = d => dayKey(d) + "T" +
 const shortcutUrl = until => "shortcuts://run-shortcut?name=Commander%20Done&input=text&text=" + isoLocal(until);
 const fmtTime = sec => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
 const hhmm = ms => new Date(ms).toTimeString().slice(0, 5);
-// Time already used today, in seconds. Older saves counted used push-ups in t.spent instead.
+// Time already used on a day, in seconds. Older saves counted used push-ups in t.spent instead.
 const spentSec = t => t.spentSec ?? (t.spent || 0) * data.perRep;
 // Earned time carries over from day to day (it doesn't reset at midnight). Days before this date
 // aren't counted, so old push-ups from before the change don't suddenly become hours of time.
@@ -250,21 +233,21 @@ const bankSec = () => Math.max(0, Object.entries(data.days)
 let spendSel = null;
 const spendOf = bank => spendSel == null || spendSel > bank ? bank : spendSel;
 
-function renderUnlock(t) {
+function renderUnlock() {
   const btn = $("unlockBtn"), info = $("unlockInfo");
   const isOpen = data.unlockUntil > Date.now();
-  const open = isOpen ? `פתוח עד ${hhmm(data.unlockUntil)}` : "";
+  const open = isOpen ? `open until ${hhmm(data.unlockUntil)}` : "";
   $("lockBtn").hidden = !isOpen;
   const bank = bankSec(), spend = spendOf(bank), min = Math.min(30, bank);
   btn.hidden = bank === 0;
-  btn.textContent = `🔓 פתח ל-${fmtTime(spend)} דקות`;
+  btn.textContent = `🔓 Open for ${fmtTime(spend)} min`;
   $("spendBox").hidden = bank <= min;
   Object.assign($("spendInput"), { min, max: bank, value: spend });
-  $("spendLabel").textContent = fmtTime(spend) + " דקות";
+  $("spendLabel").textContent = fmtTime(spend) + " min";
   const left = bank - spend;
   info.textContent = [
-    bank ? `צברת ${fmtTime(bank)} דקות` : "כל שכיבה = " + fmtTime(data.perRep) + " דקות",
-    left ? `ישארו ${fmtTime(left)} דקות` : "",
+    bank ? `You've earned ${fmtTime(bank)} min` : "Each push-up = " + fmtTime(data.perRep) + " min",
+    left ? `${fmtTime(left)} min will stay saved` : "",
     open,
   ].filter(Boolean).join(" · ");
 }
@@ -272,7 +255,7 @@ function renderUnlock(t) {
 $("spendInput").addEventListener("input", e => {
   const bank = bankSec();
   spendSel = +e.target.value >= bank ? null : +e.target.value;
-  renderUnlock(todayRec());
+  renderUnlock();
 });
 
 $("unlockBtn").addEventListener("click", e => {
@@ -304,127 +287,30 @@ $("lockBtn").addEventListener("click", e => {
 
 data.perRep = Math.min(60, Math.max(30, data.perRep));   // at most 1 minute per push-up
 $("perRepInput").value = data.perRep;
-const renderPerRep = () => { $("perRepLabel").textContent = fmtTime(data.perRep) + " דקות"; };
+const renderPerRep = () => { $("perRepLabel").textContent = fmtTime(data.perRep) + " min"; };
 renderPerRep();
 $("perRepInput").addEventListener("input", e => { data.perRep = +e.target.value; save(); renderPerRep(); renderStats(); });
 
 $("skeletonInput").checked = data.skeleton;
 $("skeletonInput").addEventListener("change", e => { data.skeleton = e.target.checked; save(); });
 
-function renderLevels() {
-  for (const b of $("levels").children) b.classList.toggle("on", +b.dataset.l === data.level);
-}
-$("levels").addEventListener("click", e => {
-  const l = +e.target.dataset?.l;
-  if (l) { data.level = l; save(); renderLevels(); }
-});
-
 renderStats();
-renderLevels();
 setInterval(renderStats, 60_000);   // rolls over at midnight
 
-// ================= voice of the commander =================
-let heVoice = null;
-function loadVoice() {
-  const vs = speechSynthesis.getVoices();
-  heVoice = vs.find(v => v.lang?.startsWith("he")) || null;
-}
-try { loadVoice(); speechSynthesis.onvoiceschanged = loadVoice; } catch {}
-
-// Recorded male voice: voice.json maps each sentence to an mp3 (base64).
-let audioCtx = null, clips = {}, buffers = {}, playing = null, queue = [];
-fetch("voice.json").then(r => r.ok ? r.json() : {}).then(j => { clips = j; }).catch(() => {});
-
-function unlockAudio() {
-  try {
-    audioCtx ??= new (window.AudioContext || window.webkitAudioContext)();
-    audioCtx.resume();
-  } catch {}
-}
-
-async function bufferFor(text) {
-  if (buffers[text]) return buffers[text];
-  const b64 = clips[text];
-  if (!b64 || !audioCtx) return null;
-  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-  return (buffers[text] = await audioCtx.decodeAudioData(bytes.buffer));
-}
-
-// Loud lines go through a gain boost + compressor, so they're much louder than the rest without crackling
-let loudChain = null;
-function loudOut() {
-  if (!loudChain) {
-    const gain = audioCtx.createGain(), comp = audioCtx.createDynamicsCompressor();
-    gain.gain.value = 4;
-    comp.threshold.value = -6; comp.knee.value = 0; comp.ratio.value = 20; comp.attack.value = 0.002; comp.release.value = 0.1;
-    gain.connect(comp).connect(audioCtx.destination);
-    loudChain = gain;
-  }
-  return loudChain;
-}
-
-function playNext() {
-  if (playing || !queue.length) return;
-  const { buf, loud } = queue.shift();
-  const src = audioCtx.createBufferSource();
-  src.buffer = buf;
-  src.connect(loud ? loudOut() : audioCtx.destination);
-  src.onended = () => { if (playing === src) { playing = null; playNext(); } };
-  playing = src;
-  src.start();
-}
-
-let lastSpoke = 0;
-async function say(text, { interrupt = true, loud = false } = {}) {
-  lastSpoke = performance.now();
-  if (clips[text] && audioCtx) {
-    if (interrupt) { queue = []; const p = playing; playing = null; try { p?.stop(); } catch {} }
-    try { const buf = await bufferFor(text); queue.push({ buf, loud }); playNext(); return; } catch {}
-  }
-  if (Object.keys(clips).length) console.warn("no recording for:", text);
-  try {
-    if (interrupt) speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = "he-IL";
-    if (heVoice) u.voice = heVoice;
-    u.rate = 1.15;
-    u.pitch = 0.7;
-    speechSynthesis.speak(u);
-  } catch {}
-}
-
-// decode everything in the background so counting has no delay
-function warmUp() { for (const t of Object.keys(clips)) bufferFor(t).catch(() => {}); }
-
-const LINES = {
-  start: ["קום, חייל! תיכנס לתנוחה!", "לתנוחת שכיבה! עכשיו!", "יאללה חייל, לרצפה!"],
-  sag: ["האגן נופל! תכווץ בטן!", "גב שוקע! תחזיק את הגוף ישר!", "בטן פנימה! אתה לא ערסל!"],
-  pike: ["תוריד את התחת! גוף ישר כמו קרש!", "אגן למטה! זה לא יוגה!", "התחת באוויר! ישר!"],
-  shallow: ["זה לא נספר! תרד עד הסוף!", "חצי שכיבה זה אפס שכיבה! למטה!", "יותר נמוך! החזה לרצפה!"],
-  lockout: ["תיישר ידיים עד הסוף!", "למעלה עד הסוף, חייל!"],
-  fast: ["לאט! זה לא תחרות!", "תשלוט בתנועה! לאט!"],
-  idle: ["מה, נרדמת?! קדימה!", "אני לא שומע ספירה!", "תזוז, חייל!", "זה הכל?! עוד!"],
-  praise: ["יפה!", "ככה אני אוהב!", "מצוין, חייל!", "טכניקה נקייה!", "תמשיך ככה!"],
-  notSeen: ["אני לא רואה אותך! תיכנס לפריים!"],
-  notPlank: ["תיכנס לתנוחת שכיבה!"],
-  knees: ["על הברכיים זה לא נספר! על כפות הרגליים!", "בלי ברכיים, חייל! רגליים ישרות!"],
-  slow: ["אין מחר!"],                  // more than 2 seconds since the last push-up
-  quit: ["בגלל זה היא עזבה אותך, כלבה רזה וקטנה!"],    // stopped completely, the set resets
-};
-
-// one correction at a time, and not the same one over and over
-const cooldowns = {};
-function correct(kind) {
-  const now = performance.now();
-  if (now - lastSpoke < 1800 || now - (cooldowns[kind] || 0) < 4000) return;
-  cooldowns[kind] = now;
-  say(pick(LINES[kind]));
-}
-
 // ================= pose analysis =================
-const UP = 0.75, DOWN = 0.45;
+// Counting follows the usual push-up-counter recipe: a rep is a full up -> down -> up cycle with a
+// dead zone between the "up" and "down" thresholds (hysteresis), the elbows must really bend at the
+// bottom and straighten at the top, glitchy frames are thrown away, and a rep can't be impossibly fast.
+const UP = 0.75, DOWN = 0.45;            // depth score thresholds (1 = arms straight, 0 = chest down)
+const ELBOW_BOTTOM_MAX = 135;            // the elbows must bend at least this much during the rep (°)
+const ELBOW_TOP_MIN = 140;               // ...and be this straight at the top (°)
+const MIN_REP_MS = 500;                  // a full rep faster than this isn't a real push-up
+const READY_MS = 150;                    // hold the top this long before counting starts
+// Measured on two real videos (phone on the floor in front): bottoms 75–129°, tops 150–170°,
+// a rep takes about 0.65–1.6 s. Replaying these rules on them: 2/2 and 4/5 reps counted, none rejected.
+
 const video = $("video"), canvas = $("canvas"), ctx = canvas.getContext("2d");
-let landmarker, draw, lastTime = -1, armLen = 0;
+let landmarker, draw, lastTime = -1;
 
 // One Euro filter: removes the frame-to-frame jitter of the detected points,
 // but follows quickly when you really move. One filter for the image points, one for the 3D points.
@@ -459,6 +345,7 @@ const smoothLandmarks = makeSmoother(), smoothWorld = makeSmoother();
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const clamp01 = v => Math.max(0, Math.min(1, v));
+const median = arr => { const s = [...arr].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
 function angle(a, b, c) {
   const ab = Math.atan2(a.y - b.y, a.x - b.x), cb = Math.atan2(c.y - b.y, c.x - b.x);
   let deg = Math.abs((ab - cb) * 180 / Math.PI);
@@ -478,9 +365,8 @@ function angle3(a, b, c) {
 const KNEE_RISE_MIN = 0.05;
 
 // Height of the shoulders above the hands at the top of a push-up; learned from you while you train.
-// It's the 90th percentile of the last ~10 seconds, so one weird frame (moving the phone, coming close)
-// can't set an impossible "top" that no real push-up reaches.
-let topLift = 0, liftHistory = [];
+// It's the 90th percentile of the last ~10 seconds, so one weird frame can't set an impossible "top".
+let topLift = 0, liftHistory = [], recentLift = [];
 function learnTop(lift) {
   liftHistory.push(lift);
   if (liftHistory.length > 300) liftHistory.shift();
@@ -490,7 +376,7 @@ function learnTop(lift) {
 
 // Reads one frame. The phone is on the floor in front of you and you face it.
 // lm = image points (0..1), wl = 3D world points. Returns
-// { seen, plank, score (1 = arms straight, 0 = chest down), form: null|"sag"|"pike", knees }
+// { seen, plank, glitch, score (1 = arms straight, 0 = chest down), elbow (°), form, knees }
 function readPose(lm, wl) {
   const W = video.videoWidth, H = video.videoHeight;
   const hasVis = lm.some(p => (p.visibility ?? 0) > 0.01);
@@ -509,286 +395,138 @@ function readPose(lm, wl) {
     if (Math.abs(torso.y) > 0.7 * len3(torso)) return { seen: true, plank: false };
   }
 
-  // Elbow angle (3D, so it works when you face the camera): only used to check the arms lock out at the top
-  const ang = arms.reduce((t, a) => t + (wl ? angle3(V(a.ids[0]), V(a.ids[1]), V(a.ids[2])) : angle(a.s, a.e, a.w)), 0) / arms.length;
-  const angScore = clamp01((ang - 70) / 100);
+  // Elbow angle (3D, so it works when you face the camera)
+  const elbow = arms.reduce((t, a) => t + (wl ? angle3(V(a.ids[0]), V(a.ids[1]), V(a.ids[2])) : angle(a.s, a.e, a.w)), 0) / arms.length;
+  const angScore = clamp01((elbow - 70) / 100);
 
   // Depth: how high the shoulders are above the hands, in shoulder widths (so moving closer doesn't matter),
   // compared to your own top position. Chest near the floor ~0.3 of the top, a half push-up ~0.65.
   const shoulderW = dist(sides[0].s, sides[1].s) || 1;
-  const lift = arms.reduce((t, a) => t + (a.w.y - a.s.y), 0) / arms.length / shoulderW;
+  const rawLift = arms.reduce((t, a) => t + (a.w.y - a.s.y), 0) / arms.length / shoulderW;
+  // Glitch filter: up close the model sometimes puts the hands far away for a single frame
+  // (seen in a real video: 1.0 -> 6.0 -> 1.0). Take the median of the last 5 frames, and skip a
+  // frame that jumps far from it, so such spikes can't fake a rep or ruin the learned "top".
+  recentLift.push(rawLift);
+  if (recentLift.length > 5) recentLift.shift();
+  const lift = median(recentLift);
+  if (recentLift.length >= 3 && Math.abs(rawLift - lift) > 1.5) return { seen: true, plank: true, glitch: true };
   learnTop(lift);
   const liftScore = topLift > 0 ? clamp01((lift / topLift - 0.15) / 0.85) : 1;
 
   const score = Math.min(liftScore, (1 + angScore) / 2);
 
-  // On the knees? Facing the camera, the 3D knee angle is only a guess (a real test showed 164° on the toes
-  // and 162° on the knees), so use the picture instead: with the phone on the floor, a knee that is lifted
-  // off the floor (real push-up) shows up HIGHER in the picture than the feet; a knee on the floor shows up
-  // level with the feet or lower. kneeRise = how much higher the knees are than the ankles, in shoulder widths.
+  // On the knees? With the phone on the floor, a knee that is lifted off the floor (real push-up) shows up
+  // HIGHER in the picture than the feet; a knee on the floor shows up level with the feet or lower.
+  // kneeRise = how much higher the knees are than the ankles, in shoulder widths.
   const knee2 = (P(25).y + P(26).y) / 2, ankle2 = (P(27).y + P(28).y) / 2;
   const kneeRise = (ankle2 - knee2) / shoulderW;
   const atTop = score > 0.7;
-  // Only judge the knees when knees and feet are really inside the picture AND the model says it actually
-  // sees them. Facing the phone, the torso hides the knees; the model then still puts them inside the picture
-  // (pure guess, visibility ~0.1) and a real push-up was rejected as "on the knees". No visibility info -> don't judge.
+  // Only judge the knees when the model really sees knees and feet. Facing the phone, the torso hides
+  // them and the model only guesses (visibility ~0.1) – judging that rejected real push-ups.
   const legsInFrame = [25, 26, 27, 28].every(i => { const q = P(i); return q.x01 >= 0 && q.x01 <= 1 && q.y01 >= 0 && q.y01 <= 1; });
   const seenWell = ids => hasVis && ids.every(i => lm[i].visibility >= 0.5);
   const legsSeen = legsInFrame && seenWell([25, 26, 27, 28]);
   const knees = atTop && legsSeen && kneeRise < KNEE_RISE_MIN;
   if (!$("debug").hidden) $("debug").textContent =
-    `ברך ${kneeRise.toFixed(2)} · רגליים ${legsSeen ? "נראות" : legsInFrame ? "מוסתרות" : "מחוץ לפריים"} · ${atTop ? "למעלה" : "למטה"} · מודל ${modelVariant}`;
+    `elbow ${elbow.toFixed(0)}° · depth ${(score * 100).toFixed(0)}% · legs ${legsSeen ? "seen" : legsInFrame ? "hidden" : "out of frame"} · model ${modelVariant}`;
 
   // Body line, from 3D – only when hips and feet are really seen (same reason as the knees)
-  let form = null, legsVisible = legsSeen;
-  if (wl && seenWell([23, 24, 27, 28])) {
+  let form = null;
+  if (wl && seenWell([23, 24, 27, 28]) && !knees) {
     const sh = mid3(V(11), V(12)), hp = mid3(V(23), V(24)), an = mid3(V(27), V(28));
-    if (!knees) {
-      // hips should sit on the straight line shoulders -> ankles
-      const line = sub3(an, sh), t = ((hp.x - sh.x) * line.x + (hp.y - sh.y) * line.y + (hp.z - sh.z) * line.z) / (len3(line) ** 2 || 1);
-      const dy = hp.y - (sh.y + t * line.y);
-      const bend = 180 - angle3(sh, hp, an);
-      if (dy > 0 && bend > 25) form = "sag";        // hips below the line (y points down)
-      else if (dy < 0 && bend > 30) form = "pike";  // hips above the line
-    }
+    // hips should sit on the straight line shoulders -> ankles
+    const line = sub3(an, sh), t = ((hp.x - sh.x) * line.x + (hp.y - sh.y) * line.y + (hp.z - sh.z) * line.z) / (len3(line) ** 2 || 1);
+    const dy = hp.y - (sh.y + t * line.y);
+    const bend = 180 - angle3(sh, hp, an);
+    if (dy > 0 && bend > 25) form = "sag";        // hips below the line (y points down)
+    else if (dy < 0 && bend > 30) form = "pike";  // hips above the line
   }
-  return { seen: true, plank: true, score, form, knees, atTop, legsVisible };
+  return { seen: true, plank: true, score, elbow, form, knees, atTop, legsVisible: legsSeen };
 }
 
-// ================= rep tracker (shared by both modes) =================
-// Emits: onRep({clean, fast}), onShallow(), onNoLockout()
+// ================= rep tracker =================
+// Emits: onRep({clean}), onReject(reason)
 const tracker = {
-  phase: "wait", smooth: null, minUp: 1, maxDown: 0, risen: false, topAt: 0, formFrames: 0, dirty: false,
-  topFrames: 0, kneeTopFrames: 0,
-  reset() { Object.assign(this, { phase: "wait", smooth: null, minUp: 1, maxDown: 0, risen: false, formFrames: 0, dirty: false, topFrames: 0, kneeTopFrames: 0 }); },
+  phase: "wait", smooth: null, readySince: 0, cycleStart: 0, minElbow: 180, topElbow: 0,
+  formFrames: 0, dirty: false, topFrames: 0, kneeTopFrames: 0,
+  reset() {
+    Object.assign(this, { phase: "wait", smooth: null, readySince: 0, cycleStart: 0, minElbow: 180, topElbow: 0,
+      formFrames: 0, dirty: false, topFrames: 0, kneeTopFrames: 0 });
+  },
   // most of this rep's top frames looked like knees on the floor
   kneeRep() { return this.topFrames >= 4 && this.kneeTopFrames > this.topFrames / 2; },
+  startCycle(now) { this.cycleStart = now; this.minElbow = 180; this.dirty = false; this.topFrames = this.kneeTopFrames = 0; },
   update(pose, ev) {
-    if (!pose.plank) { this.formFrames = 0; return; }
+    const now = performance.now();
+    // Out of push-up position: whatever was going on doesn't count, start over
+    if (!pose.plank) { this.reset(); return; }
+    if (pose.glitch) return;   // a bad frame: ignore it completely
     this.smooth = this.smooth == null ? pose.score : this.smooth * 0.5 + pose.score * 0.5;
-    const v = this.smooth, now = performance.now();
+    const v = this.smooth;
 
-    // form must be wrong for ~1/2 second before we yell
     this.formFrames = pose.form ? this.formFrames + 1 : 0;
-    if (this.formFrames > 14 && this.phase !== "wait") { this.dirty = true; ev.onForm?.(pose.form); }
-
-    // on the knees for ~1/3 second during a rep -> that rep doesn't count
+    if (this.formFrames > 14 && this.phase !== "wait") this.dirty = true;   // bad form for ~1/2 second
     if (pose.atTop) { this.topFrames++; if (pose.knees) this.kneeTopFrames++; }
+    this.minElbow = Math.min(this.minElbow, pose.elbow);
 
     if (this.phase === "wait") {
-      if (v > UP) { this.phase = "up"; this.topAt = now; this.minUp = 1; }
+      // arms straight and steady for a moment before counting starts
+      if (v > UP && pose.elbow >= ELBOW_TOP_MIN) {
+        this.readySince ||= now;
+        if (now - this.readySince >= READY_MS) { this.phase = "up"; this.startCycle(now); }
+      } else this.readySince = 0;
     } else if (this.phase === "up") {
-      this.minUp = Math.min(this.minUp, v);
-      if (v < DOWN) { this.phase = "down"; this.risen = false; }
-      else if (v > UP && this.minUp < 0.65) { ev.onShallow?.(); this.minUp = 1; this.dirty = false; }
-      else if (v > UP) { this.topAt = now; this.minUp = Math.min(1, this.minUp + 0.02); }
+      if (v < DOWN) this.phase = "down";
+      else if (v > UP) this.startCycle(now);   // still at the top: the rep starts from the last top frame
     } else if (this.phase === "down") {
-      if (v > 0.6 && v < UP) this.risen = true;
-      if (this.risen && v < DOWN) { ev.onNoLockout?.(); this.risen = false; }
-      if (v > UP) {
-        const fast = now - this.topAt < 500;
-        if (this.kneeRep()) ev.onKnees?.();
-        else ev.onRep?.({ clean: !this.dirty && !fast, fast });
-        this.phase = "up"; this.topAt = now; this.minUp = 1; this.dirty = false; this.topFrames = this.kneeTopFrames = 0;
+      if (v > UP && pose.elbow >= ELBOW_TOP_MIN) {
+        let reason = null;
+        if (this.minElbow > ELBOW_BOTTOM_MAX) reason = "elbows";      // shoulders moved, but the arms didn't bend
+        else if (now - this.cycleStart < MIN_REP_MS) reason = "fast";  // too fast to be a real push-up
+        else if (this.kneeRep()) reason = "knees";
+        if (reason) ev.onReject?.(reason);
+        else ev.onRep?.({ clean: !this.dirty });
+        this.phase = "up"; this.startCycle(now);
       }
     }
   },
 };
 
-// ================= session state =================
-let mode = null;           // null | "free" | "drill"
-let setReps = 0, sessReps = 0, sessClean = 0, cleanRun = 0, lastRepAt = 0, goalAnnounced = false;
-let lostSince = 0, inPlankAt = 0, phaseAt = 0, lastPhase = "wait", slowYelledAt = 0;
+// ================= session =================
+let running = false;
+let setReps = 0, sessReps = 0, sessClean = 0;
+let lostSince = 0, inPlankAt = 0, phaseAt = 0, lastPhase = "wait", noteUntil = 0;
 
-// Free mode: getting out of push-up position ends the set and the counter starts again from 0
+function hint(text, bad = false) { $("hint").textContent = text; $("hint").className = bad ? "hint bad" : "hint"; }
+// a short message that stays on screen for a moment (e.g. why a rep didn't count)
+function note(text) { hint(text, true); noteUntil = performance.now() + 1500; }
+
+// Getting out of push-up position ends the set and the counter starts again from 0
 function endSet() {
   const n = setReps;
   setReps = 0;
   tracker.reset();
   $("count").textContent = "0";
-  $("order").textContent = `סט קודם: ${n} שכיבות`;
-  say(pick(LINES.quit), { loud: true });
+  $("order").textContent = `Last set: ${n} push-ups`;
 }
 
 function addRep(clean) {
   const t = todayRec();
-  const before = t.reps;
   t.reps++; sessReps++; setReps++;
-  if (clean) { t.clean++; sessClean++; cleanRun++; } else cleanRun = 0;
+  if (clean) { t.clean++; sessClean++; }
   data.best = Math.max(data.best, setReps);
   save(); renderStats();
-  lastRepAt = performance.now();
-
-  if (before < data.goal && t.reps >= data.goal && !goalAnnounced) {
-    goalAnnounced = true;
-    setTimeout(() => say("עמדת ביעד היומי! כל הכבוד, חייל!"), 700);
-  } else if (mode === "free") {
-    const left = data.goal - t.reps;
-    if (left === 10) setTimeout(() => say("עוד עשר ליעד! תן הכל!", { interrupt: false }), 500);
-    else if (before < data.goal / 2 && t.reps >= data.goal / 2) setTimeout(() => say("חצי מהיעד! אל תעצור!", { interrupt: false }), 500);
-    else if (clean && cleanRun % 5 === 0) setTimeout(() => say(pick(LINES.praise), { interrupt: false }), 500);
-  }
+  $("count").textContent = setReps;
 }
 
-const freeEvents = {
-  onRep({ clean, fast }) {
-    addRep(clean);
-    $("count").textContent = setReps;
-    say(String(setReps));
-    if (fast) setTimeout(() => correct("fast"), 600);
-  },
-  onShallow: () => correct("shallow"),
-  onNoLockout: () => correct("lockout"),
-  onKnees: () => correct("knees"),
-  onForm: f => correct(f),
+const events = {
+  onRep: ({ clean }) => addRep(clean),
+  onReject: reason => note({
+    elbows: "Didn't count – bend your elbows",
+    fast: "Didn't count – too fast",
+    knees: "Knee push-ups don't count",
+  }[reason]),
 };
-
-// ================= drill mode: the commander gives orders =================
-function buildProgram(L) {
-  const r = n => n * L;
-  return [
-    { type: "reps", n: 3 + r(2) },
-    { type: "rest", sec: 20 },
-    { type: "cadence", n: 3 + r(2) },
-    { type: "holdDown", sec: 2 + r(2) },
-    { type: "rest", sec: 20 },
-    { type: "holdUp", sec: 10 + r(10) },
-    { type: "reps", n: 2 + r(3) },
-    { type: "rest", sec: 15 },
-    { type: "cadence", n: 2 + r(2), hold: true },
-    { type: "reps", n: 5 + r(3), final: true },
-  ];
-}
-
-const drill = {
-  steps: [], i: -1, step: null, t0: 0, sub: null, done: 0, held: 0, lastTick: 0, warned: 0,
-
-  start() {
-    this.steps = buildProgram(data.level);
-    this.i = -1;
-    say(pick(LINES.start));
-    setTimeout(() => mode === "drill" && this.next(), 2500);
-  },
-
-  next() {
-    this.i++;
-    if (this.i >= this.steps.length) return finish(true);
-    const s = this.step = this.steps[this.i];
-    this.t0 = performance.now(); this.done = 0; this.held = 0; this.lastTick = 0; this.warned = 0; this.lastFrame = 0;
-    setReps = 0;
-    $("count").textContent = "";
-    tracker.reset();
-    switch (s.type) {
-      case "reps":
-        order(s.final ? `סט אחרון! ${s.n} שכיבות!` : `תן לי ${s.n} שכיבות!`);
-        $("count").textContent = 0;
-        break;
-      case "cadence":
-        order(`לפי הקצב שלי! ${s.n} שכיבות. רק כשאני אומר!`);
-        this.sub = { want: "ready", at: performance.now() + 3000 };
-        $("count").textContent = 0;
-        break;
-      case "holdDown":
-        order(`למטה, ותחזיק ${s.sec} שניות!`);
-        break;
-      case "holdUp":
-        order(`פלאנק על ידיים ישרות! ${s.sec} שניות! גוף ישר!`);
-        break;
-      case "rest":
-        order(`מנוחה! ${s.sec} שניות.`);
-        break;
-    }
-  },
-
-  // called every frame
-  tick(pose) {
-    const s = this.step;
-    if (!s) return;
-    const now = performance.now(), v = tracker.smooth;
-    const inPlank = pose?.plank;
-
-    if (s.type === "rest") {
-      const left = Math.ceil(s.sec - (now - this.t0) / 1000);
-      $("count").textContent = Math.max(0, left);
-      if (left === 5 && this.lastTick !== 5) { this.lastTick = 5; say("חמש שניות! להתכונן!"); }
-      if (left <= 0) this.next();
-      return;
-    }
-
-    if (pose && pose.seen === false) return;   // handled by the "not seen" warning
-
-    if (s.type === "reps") {
-      tracker.update(pose, {
-        onRep: ({ clean, fast }) => {
-          this.done++; addRep(clean);
-          $("count").textContent = this.done;
-          if (this.done >= s.n) { say(String(this.done)); setTimeout(() => say(pick(LINES.praise), { interrupt: false }), 300); setTimeout(() => mode === "drill" && this.next(), 1500); this.step = null; }
-          else { say(String(this.done)); if (fast) setTimeout(() => correct("fast"), 600); }
-        },
-        onShallow: () => correct("shallow"),
-        onNoLockout: () => correct("lockout"),
-        onKnees: () => correct("knees"),
-        onForm: f => correct(f),
-      });
-      const idleFrom = Math.max(this.t0, lastRepAt);
-      if (now - idleFrom > 7000 && now - this.warned > 7000) { this.warned = now; say(pick(LINES.idle)); }
-      return;
-    }
-
-    tracker.update(pose, { onForm: f => correct(f) });
-    if (v == null || !inPlank) {
-      if (now - this.t0 > 6000 && now - this.warned > 6000) { this.warned = now; correct("notPlank"); }
-      return;
-    }
-
-    if (s.type === "cadence") {
-      const c = this.sub;
-      if (c.want === "ready") {                       // wait at the top
-        if (v > UP && now > c.at) { c.want = "down"; c.at = now + 3500; say("למטה!"); hint("למטה!"); }
-      } else if (c.want === "down") {
-        if (v < DOWN) {
-          if (s.hold) { c.want = "hold"; c.at = now + 1500; say("החזק!"); hint("החזק!"); }
-          else { c.want = "up"; c.at = now + 3500; say("למעלה!"); hint("למעלה!"); }
-        } else if (now > c.at) { c.at = now + 3500; say("יותר נמוך! למטה!"); }
-      } else if (c.want === "hold") {
-        if (v > 0.6) { c.want = "down"; c.at = now + 3500; say("אמרתי להחזיק! שוב למטה!"); }
-        else if (now > c.at) { c.want = "up"; c.at = now + 3500; say("למעלה!"); hint("למעלה!"); }
-      } else if (c.want === "up") {
-        if (v > UP) {
-          if (tracker.kneeRep()) { correct("knees"); tracker.topFrames = tracker.kneeTopFrames = 0; c.want = "ready"; c.at = now + 1500; return; }
-          tracker.topFrames = tracker.kneeTopFrames = 0;
-          this.done++; addRep(!tracker.dirty); tracker.dirty = false;
-          $("count").textContent = this.done;
-          if (this.done >= s.n) { say(pick(LINES.praise)); this.step = null; setTimeout(() => mode === "drill" && this.next(), 1500); }
-          else { c.want = "ready"; c.at = now + 700 + Math.random() * 1300; say(String(this.done)); }
-        } else if (now > c.at) { c.at = now + 3500; say("למעלה! עד הסוף!"); }
-      }
-      return;
-    }
-
-    // holds: holdDown = chest low, holdUp = straight arms with a straight body
-    const holding = s.type === "holdDown" ? v < 0.55 && !pose.knees : v > UP && !pose.form && !pose.knees;
-    const dt = this.lastFrame ? Math.min(0.2, (now - this.lastFrame) / 1000) : 0;
-    this.lastFrame = now;
-    if (holding) {
-      this.held += dt;
-      const left = Math.ceil(s.sec - this.held);
-      $("count").textContent = Math.max(0, left);
-      if (left !== this.lastTick && left <= 3 && left > 0) { this.lastTick = left; say(String(left)); }
-      if (this.held >= s.sec) {
-        say(s.type === "holdDown" ? "למעלה! יפה!" : "שחרר! עבודה טובה!");
-        this.step = null; this.lastFrame = 0;
-        setTimeout(() => mode === "drill" && this.next(), 1500);
-      }
-    } else if (this.held > 0.3 && now - this.warned > 3000) {
-      this.warned = now;
-      say(s.type === "holdDown" ? "אמרתי להחזיק למטה!" : (pose.form ? "גוף ישר! אל תשבור!" : "ידיים ישרות! תחזיק!"));
-    }
-  },
-};
-
-function order(text) { $("order").textContent = text; say(text); }
-function hint(text, bad = false) { $("hint").textContent = text; $("hint").className = bad ? "hint bad" : "hint"; }
 
 // If the accurate model is too slow on this phone (average > 70 ms a frame), switch to the light one
 let speedSamples = [], switching = false;
@@ -808,7 +546,7 @@ function checkSpeed(ms) {
 
 // ================= main loop =================
 function loop() {
-  if (!mode) return;
+  if (!running) return;
   if (video.currentTime !== lastTime && video.videoWidth) {
     lastTime = video.currentTime;
     if (canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
@@ -824,42 +562,29 @@ function loop() {
     if (lm && data.skeleton) {
       const color = pose.form ? "#ff5c5c" : "#3ddc84";
       // when the legs are hidden the model only guesses them, so draw just the upper body
-      const showLegs = pose.legsVisible !== false;
+      const showLegs = !!pose.legsVisible;
       const links = showLegs ? PoseLandmarker.POSE_CONNECTIONS : PoseLandmarker.POSE_CONNECTIONS.filter(c => c.start < 25 && c.end < 25);
       draw.drawConnectors(lm, links, { color, lineWidth: 3 });
       draw.drawLandmarks(showLegs ? lm : lm.slice(0, 25), { color: "#fff", radius: 3 });
     }
 
     const now = performance.now();
-    if (!pose.seen) {
-      hint("לא רואים אותך – תתרחק / תזיז את הטלפון", true);
-      if (!lostSince) lostSince = now;
-      if (now - lostSince > 4000) correct("notSeen");
-    } else {
-      lostSince = 0;
-      if (!pose.plank) hint("תיכנס לתנוחת שכיבה (הטלפון מולך)", true);
-      else if (pose.knees) hint("על הברכיים לא נספר!", true);
-      else if (pose.form === "sag") hint("האגן נופל!", true);
-      else if (pose.form === "pike") hint("האגן גבוה מדי!", true);
-      else if (mode === "free") hint(tracker.phase === "wait" ? "ישר ידיים כדי להתחיל" : tracker.phase === "down" ? "למעלה!" : "למטה");
-      else hint("");
+    if (pose.seen) tracker.update(pose, events);
+    if (now > noteUntil) {
+      if (!pose.seen) hint("Can't see you – move back / move the phone", true);
+      else if (!pose.plank) hint("Get into push-up position (phone in front of you)", true);
+      else if (pose.knees) hint("Knee push-ups don't count", true);
+      else if (pose.form === "sag") hint("Hips are sagging", true);
+      else if (pose.form === "pike") hint("Hips too high", true);
+      else if (!pose.glitch) hint(tracker.phase === "wait" ? "Straighten your arms to start" : tracker.phase === "down" ? "Up!" : "Down");
     }
+    lostSince = pose.seen ? 0 : (lostSince || now);
 
-    if (mode === "free") {
-      if (pose.seen) tracker.update(pose, freeEvents);
-      if (pose.seen && pose.plank) inPlankAt = now;
-      if (tracker.phase !== lastPhase) { lastPhase = tracker.phase; phaseAt = now; }
-      const offPlank = now - inPlankAt > 2500;                          // stood up / knelt / left the frame
-      const lyingDown = tracker.phase === "down" && now - phaseAt > 6000;  // lying on the floor
-      if (setReps > 0 && (offPlank || lyingDown)) endSet();
-      else if (setReps > 0 && now - lastRepAt > 2000 && slowYelledAt !== lastRepAt) {
-        slowYelledAt = lastRepAt;            // once per gap; the next push-up re-arms it
-        say(pick(LINES.slow), { loud: true });
-      }
-      else if (setReps > 0 && now - lastRepAt > 9000 && now - lastSpoke > 9000) say(pick(LINES.idle));
-    } else {
-      drill.tick(pose.seen ? pose : (drill.step?.type === "rest" ? null : pose));
-    }
+    if (pose.seen && pose.plank) inPlankAt = now;
+    if (tracker.phase !== lastPhase) { lastPhase = tracker.phase; phaseAt = now; }
+    const offPlank = now - inPlankAt > 2500;                          // stood up / knelt / left the frame
+    const lyingDown = tracker.phase === "down" && now - phaseAt > 6000;  // lying on the floor
+    if (setReps > 0 && (offPlank || lyingDown)) endSet();
   }
   requestAnimationFrame(loop);
 }
@@ -881,22 +606,20 @@ async function createLandmarker(delegate, variant) {
 }
 
 let wakeLock = null;
-async function begin(m) {
-  unlockAudio();   // iOS: audio must be unlocked inside the tap
-  warmUp();
-  $("startBox").hidden = true;
+async function begin() {
+  $("startBtn").hidden = true;
   $("summary").hidden = true;
   $("stopBtn").hidden = false;
   try {
     if (!video.srcObject) {
-      hint("פותח מצלמה...");
+      hint("Opening camera...");
       video.srcObject = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false,
       });
       await video.play();
     }
     if (!landmarker) {
-      hint("טוען מודל...");
+      hint("Loading model...");
       for (const [variant, delegate] of [["full", "GPU"], ["lite", "GPU"], ["lite", "CPU"]]) {
         try { landmarker = await createLandmarker(delegate, variant); modelVariant = variant; break; } catch {}
       }
@@ -905,60 +628,49 @@ async function begin(m) {
     }
     try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
   } catch (e) {
-    hint("שגיאה: " + e.message, true);
-    $("startBox").hidden = false;
+    hint("Error: " + e.message, true);
+    $("startBtn").hidden = false;
     $("stopBtn").hidden = true;
     return;
   }
 
-  mode = m;
-  setReps = sessReps = sessClean = cleanRun = 0;
-  topLift = 0; liftHistory = []; smoothLandmarks.reset(); smoothWorld.reset();
+  running = true;
+  setReps = sessReps = sessClean = 0;
+  topLift = 0; liftHistory = []; recentLift = []; smoothLandmarks.reset(); smoothWorld.reset();
   inPlankAt = phaseAt = performance.now();
-  lastRepAt = performance.now();
-  goalAnnounced = todayRec().reps >= data.goal;
+  noteUntil = 0;
   tracker.reset();
   $("order").textContent = "";
-  $("count").textContent = m === "free" ? "0" : "";
-  if (m === "free") say(pick(LINES.start));
-  else drill.start();
+  $("count").textContent = "0";
   loop();
 }
 
-function finish(completed) {
-  if (!mode) return;
-  const wasDrill = mode === "drill";
-  mode = null;
-  drill.step = null;
+function finish() {
+  if (!running) return;
+  running = false;
   try { wakeLock?.release(); } catch {}
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  $("startBox").hidden = false;
+  $("startBtn").hidden = false;
   $("stopBtn").hidden = true;
   $("order").textContent = "";
-  hint("בחר אימון");
+  $("count").textContent = "";
+  hint("Tap Start");
 
   const t = todayRec(), left = Math.max(0, data.goal - t.reps);
   const pct = sessReps ? Math.round(sessClean / sessReps * 100) : 0;
   $("summary").hidden = false;
   $("summary").innerHTML = `
-    <b>${wasDrill ? (completed ? "🪖 סיימת את האימון של המפקד!" : "🪖 עזבת באמצע...") : "💪 סיכום אימון"}</b>
+    <b>💪 Workout summary</b>
     <div class="stats">
-      <div><b>${sessReps}</b><span class="muted">שכיבות</span></div>
-      <div><b>${pct}%</b><span class="muted">טכניקה נקייה</span></div>
-      <div><b>${left}</b><span class="muted">נשארו להיום</span></div>
+      <div><b>${sessReps}</b><span class="muted">Push-ups</span></div>
+      <div><b>${pct}%</b><span class="muted">Clean form</span></div>
+      <div><b>${left}</b><span class="muted">Left today</span></div>
     </div>`;
-
-  let line;
-  if (wasDrill && !completed) line = "ברחת באמצע, חייל? מחר אני מצפה ליותר!";
-  else if (left === 0) line = "סיימת. היעד היומי הושג. השתחרר!";
-  else line = "לא רע. אבל היעד של היום עוד לא נגמר. אני מחכה!";
-  say(line);
 }
 
-$("freeBtn").addEventListener("click", () => begin("free"));
+$("startBtn").addEventListener("click", begin);
 document.querySelector(".stage").addEventListener("click", () => { $("debug").hidden = !$("debug").hidden; $("debug").textContent = ""; });
-$("drillBtn").addEventListener("click", () => begin("drill"));
-$("stopBtn").addEventListener("click", () => finish(false));
+$("stopBtn").addEventListener("click", finish);
 </script>
 </body>
 </html>
