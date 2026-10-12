@@ -133,7 +133,7 @@ import { PoseLandmarker, FilesetResolver, DrawingUtils }
 const $ = id => document.getElementById(id);
 
 // ================= storage (everything stays on the phone) =================
-const APP_VERSION = "2026-10-12b";
+const APP_VERSION = "2026-10-12c";
 (async () => {
   try {
     const html = await (await fetch("index.html?check=" + Date.now(), { cache: "no-store" })).text();
@@ -459,14 +459,17 @@ function readPose(lm, wl) {
 
 // ================= rep tracker =================
 // Emits: onRep({clean}), onReject(reason)
+// Knees are judged only at the START of a set (the top position before the first push-up + the first
+// push-up). That decision holds for the whole set; during the next push-ups the knees aren't checked,
+// so a few bad frames mid-set can't reject a real push-up. Leaving the push-up position starts a new set.
 const tracker = {
-  phase: "wait", smooth: null, readySince: 0, cycleStart: 0, minElbow: 180, topElbow: 0,
-  formFrames: 0, dirty: false, topFrames: 0, kneeTopFrames: 0,
+  phase: "wait", smooth: null, readySince: 0, cycleStart: 0, minElbow: 180,
+  formFrames: 0, dirty: false, topFrames: 0, kneeTopFrames: 0, setKnees: null,
   reset() {
-    Object.assign(this, { phase: "wait", smooth: null, readySince: 0, cycleStart: 0, minElbow: 180, topElbow: 0,
-      formFrames: 0, dirty: false, topFrames: 0, kneeTopFrames: 0 });
+    Object.assign(this, { phase: "wait", smooth: null, readySince: 0, cycleStart: 0, minElbow: 180,
+      formFrames: 0, dirty: false, topFrames: 0, kneeTopFrames: 0, setKnees: null });
   },
-  // most of this rep's top frames looked like knees on the floor
+  // most of the top frames so far looked like knees on the floor
   kneeRep() { return this.topFrames >= 4 && this.kneeTopFrames > this.topFrames / 2; },
   startCycle(now) { this.cycleStart = now; this.minElbow = 180; },
   // after a rep: also forget the top frames, form and knee counts of the rep that just ended
@@ -481,24 +484,26 @@ const tracker = {
 
     this.formFrames = pose.form ? this.formFrames + 1 : 0;
     if (this.formFrames > 14 && this.phase !== "wait") this.dirty = true;   // bad form for ~1/2 second
-    if (pose.atTop) { this.topFrames++; if (pose.knees) this.kneeTopFrames++; }
+    if (pose.atTop && this.setKnees === null) { this.topFrames++; if (pose.knees) this.kneeTopFrames++; }
     this.minElbow = Math.min(this.minElbow, pose.elbow);
 
     if (this.phase === "wait") {
       // arms straight and steady for a moment before counting starts
       if (v > UP && pose.elbow >= ELBOW_TOP_MIN) {
         this.readySince ||= now;
-        if (now - this.readySince >= READY_MS) { this.phase = "up"; this.newRep(now); }
+        // keep the top frames seen so far: they're part of the start-of-set knee check
+        if (now - this.readySince >= READY_MS) { this.phase = "up"; this.startCycle(now); this.dirty = false; }
       } else this.readySince = 0;
     } else if (this.phase === "up") {
       if (v < DOWN) this.phase = "down";
       else if (v > UP) this.startCycle(now);   // still at the top: the rep starts from the last top frame
     } else if (this.phase === "down") {
       if (v > UP && pose.elbow >= ELBOW_TOP_MIN) {
+        if (this.setKnees === null) this.setKnees = this.kneeRep();   // first push-up of the set decides
         let reason = null;
-        if (this.minElbow > ELBOW_BOTTOM_MAX) reason = "elbows";      // shoulders moved, but the arms didn't bend
+        if (this.setKnees) reason = "knees";                            // this set started on the knees
+        else if (this.minElbow > ELBOW_BOTTOM_MAX) reason = "elbows";  // shoulders moved, but the arms didn't bend
         else if (now - this.cycleStart < MIN_REP_MS) reason = "fast";  // too fast to be a real push-up
-        else if (this.kneeRep()) reason = "knees";
         if (reason) ev.onReject?.(reason);
         else ev.onRep?.({ clean: !this.dirty });
         this.phase = "up"; this.newRep(now);
@@ -579,7 +584,7 @@ function loop() {
       // draw only what the model really sees: whole body, down to the knees, or just the upper body
       const upTo = pose.legsVisible ? 33 : pose.kneesVisible ? 27 : 25;
       const links = PoseLandmarker.POSE_CONNECTIONS.filter(c => c.start < upTo && c.end < upTo);
-      draw.drawConnectors(lm, links, { color: pose.knees ? "#ff5c5c" : color, lineWidth: 3 });
+      draw.drawConnectors(lm, links, { color: tracker.setKnees ? "#ff5c5c" : color, lineWidth: 3 });
       draw.drawLandmarks(lm.slice(0, upTo), { color: "#fff", radius: 3 });
     }
 
@@ -588,7 +593,7 @@ function loop() {
     if (now > noteUntil) {
       if (!pose.seen) hint("Can't see you – move back / move the phone", true);
       else if (!pose.plank) hint("Get into push-up position (phone in front of you)", true);
-      else if (pose.knees) hint("Knee push-ups don't count", true);
+      else if (tracker.setKnees || (tracker.setKnees === null && pose.knees)) hint("Knee push-ups don't count", true);
       else if (pose.form === "sag") hint("Hips are sagging", true);
       else if (pose.form === "pike") hint("Hips too high", true);
       else if (!pose.glitch) hint(tracker.phase === "wait" ? "Straighten your arms to start" : tracker.phase === "down" ? "Up!" : "Down");
