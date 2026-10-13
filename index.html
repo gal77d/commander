@@ -133,7 +133,7 @@ import { PoseLandmarker, FilesetResolver, DrawingUtils }
 const $ = id => document.getElementById(id);
 
 // ================= storage (everything stays on the phone) =================
-const APP_VERSION = "2026-10-12e";
+const APP_VERSION = "2026-10-13a";
 (async () => {
   try {
     const html = await (await fetch("index.html?check=" + Date.now(), { cache: "no-store" })).text();
@@ -464,6 +464,9 @@ function readPose(lm, wl) {
 // reject a real push-up. Only the last frames count, so switching from knees to toes at the top works:
 // the push-up right after the switch is judged by how you are when you start it.
 const KNEE_WINDOW = 8;   // ~0.25 s of frames (6 let 1 of 10 knee push-ups through in testing; 8–12 caught all)
+// 3 of those frames looking like knees is enough. A majority was too strict on the phone: the message
+// showed but the push-up still counted. In testing, toe push-ups had 0–6 such frames in a whole video.
+const KNEE_MIN_FRAMES = 3;
 const tracker = {
   phase: "wait", smooth: null, readySince: 0, cycleStart: 0, minElbow: 180,
   formFrames: 0, dirty: false, topFlags: [], repKnees: false, lastKnees: false,
@@ -471,11 +474,12 @@ const tracker = {
     Object.assign(this, { phase: "wait", smooth: null, readySince: 0, cycleStart: 0, minElbow: 180,
       formFrames: 0, dirty: false, topFlags: [], repKnees: false, lastKnees: false });
   },
-  // decided when you start going down: did most of the last top frames look like knees on the floor?
+  // right now (at the top), would this push-up count as knees?
+  kneesNow() { return this.topFlags.filter(Boolean).length >= Math.min(KNEE_MIN_FRAMES, this.topFlags.length); },
+  // decided when you start going down, from the last top frames.
   // With no top frame at all (super quick), the previous push-up's answer is used.
   judgeKnees() {
-    const f = this.topFlags;
-    if (f.length) this.lastKnees = f.filter(Boolean).length > f.length / 2;
+    if (this.topFlags.length) this.lastKnees = this.topFlags.some(Boolean) && this.kneesNow();
     this.repKnees = this.lastKnees;
   },
   startCycle(now) { this.cycleStart = now; this.minElbow = 180; },
@@ -603,7 +607,8 @@ function loop() {
     if (now > noteUntil) {
       if (!pose.seen) hint("Can't see you – move back / move the phone", true);
       else if (!pose.plank) hint("Get into push-up position (phone in front of you)", true);
-      else if (tracker.phase !== "down" && pose.knees) hint("Knee push-ups don't count", true);
+      else if (tracker.phase === "down" ? tracker.repKnees : tracker.topFlags.some(Boolean) && tracker.kneesNow())
+        hint("Knee push-ups don't count", true);
       else if (pose.form === "sag") hint("Hips are sagging", true);
       else if (pose.form === "pike") hint("Hips too high", true);
       else if (!pose.glitch) hint(tracker.phase === "wait" ? "Straighten your arms to start" : tracker.phase === "down" ? "Up!" : "Down");
