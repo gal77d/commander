@@ -133,7 +133,7 @@ import { PoseLandmarker, FilesetResolver, DrawingUtils }
 const $ = id => document.getElementById(id);
 
 // ================= storage (everything stays on the phone) =================
-const APP_VERSION = "2026-10-13a";
+const APP_VERSION = "2026-10-13b";
 (async () => {
   try {
     const html = await (await fetch("index.html?check=" + Date.now(), { cache: "no-store" })).text();
@@ -364,11 +364,11 @@ function angle3(a, b, c) {
 // Below this "knee rise" (see readPose) you're counted as on your knees
 const KNEE_RISE_MIN = 0.05;
 // On the knees the legs are folded: with the phone low on the floor in front, the 3D knee angle
-// (hip-knee-ankle) and hip angle (shoulder-hip-knee) at the top of the rep are much smaller.
-// Measured at the top of real reps: on the toes knee >= 153°, hip >= 172° (10th percentile);
-// on the knees knee <= 117°, hip <= 138° (90th percentile). Rule: knee < 135° AND hip < 150°.
-// On 6 test clips: 0–5% of toe frames flagged, 93–100% of knee frames (when the legs are in view).
-const KNEE_FOLD_MAX = 135, HIP_FOLD_MAX = 150;
+// (hip-knee-ankle) at the top of the rep is much smaller. Measured at the top of real reps: on the toes
+// the knee is >= 151° (1st percentile, 3 videos); on the knees mostly 52–127°.
+// Only the knee counts: leaning forward on the knees straightens the hip (it used to need the hip < 150°
+// too, and leaning forward got around it), but the knee stays bent.
+const KNEE_FOLD_MAX = 140;
 
 // Height of the shoulders above the hands at the top of a push-up; learned from you while you train.
 // It's the 90th percentile of the last ~10 seconds, so one weird frame can't set an impossible "top".
@@ -437,7 +437,7 @@ function readPose(lm, wl) {
     kneeAng = (angle3(V(23), V(25), V(27)) + angle3(V(24), V(26), V(28))) / 2;
     hipAng = (angle3(V(11), V(23), V(25)) + angle3(V(12), V(24), V(26))) / 2;
   }
-  const legsFolded = kneeAng < KNEE_FOLD_MAX && hipAng < HIP_FOLD_MAX;
+  const legsFolded = kneeAng < KNEE_FOLD_MAX;
   const knees = atTop && ((legsSeen && kneeRise < KNEE_RISE_MIN) || legsFolded);
   if (!$("debug").hidden) $("debug").textContent =
     `elbow ${elbow.toFixed(0)}° · knee ${kneeAng.toFixed(0)}° · hip ${hipAng.toFixed(0)}° · depth ${(score * 100).toFixed(0)}% · model ${modelVariant}`;
